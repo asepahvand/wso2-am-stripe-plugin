@@ -632,7 +632,7 @@ public class ZarinpalMonetizationDAO {
      * @throws ZarinpalMonetizationException If Failed To add Billing Engine Shared Customer details
      */
     public void addBESubscription(APIIdentifier identifier, int applicationId, int tenandId,
-                                  int sharedCustomerId, String subscriptionId) throws ZarinpalMonetizationException {
+                                  int sharedCustomerId, String subscriptionId, String planId) throws ZarinpalMonetizationException {
 
         Connection conn = null;
         ResultSet rs = null;
@@ -655,6 +655,7 @@ public class ZarinpalMonetizationDAO {
             ps.setInt(3, tenandId);
             ps.setInt(4, sharedCustomerId);
             ps.setString(5, subscriptionId);
+            ps.setString(6, planId);
             ps.executeUpdate();
             conn.commit();
         } catch (SQLException e) {

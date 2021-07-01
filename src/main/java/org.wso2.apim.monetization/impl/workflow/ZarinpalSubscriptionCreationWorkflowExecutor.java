@@ -18,8 +18,6 @@
 
 package org.wso2.apim.monetization.impl.workflow;
 
-import com.google.gson.Gson;
-import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -54,6 +52,7 @@ import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * worrkflow executor for zarinpal based subscription create action
@@ -107,39 +106,13 @@ public class ZarinpalSubscriptionCreationWorkflowExecutor extends WorkflowExecut
     @Override
     public WorkflowResponse monetizeSubscription(WorkflowDTO workflowDTO, API api) throws WorkflowException {
 
-        boolean isMonetizationEnabled = false;
         SubscriptionWorkflowDTO subWorkFlowDTO = null;
-        String zarinpalPlatformAccountKey = null;
         Subscriber subscriber = null;
-        Customer customer = null;
-        Customer sharedCustomerBE = null;
         MonetizationPlatformCustomer monetizationPlatformCustomer;
         MonetizationSharedCustomer monetizationSharedCustomer;
         ApiMgtDAO apiMgtDAO = ApiMgtDAO.getInstance();
         subWorkFlowDTO = (SubscriptionWorkflowDTO) workflowDTO;
 
-        //read the platform account key of Zarinpal
-        Zarinpal.apiKey = getPlatformAccountKey(subWorkFlowDTO.getTenantId());
-        String connectedAccountKey = StringUtils.EMPTY;
-        Map<String, String> monetizationProperties = new Gson().fromJson(api.getMonetizationProperties().toString(),
-                HashMap.class);
-        if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
-            connectedAccountKey = monetizationProperties.get
-                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
-            if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account zarinpal key was not found for API : "
-                        + api.getId().getApiName();
-                log.error(errorMessage);
-                throw new WorkflowException(errorMessage);
-            }
-        } else {
-            String errorMessage = "Zarinpal key of the connected account is empty.";
-            log.error(errorMessage);
-            throw new WorkflowException(errorMessage);
-        }
-        //needed to create artifacts in the zarinpal connected account
-        RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
         try {
             subscriber = apiMgtDAO.getSubscriber(subWorkFlowDTO.getSubscriber());
             // check whether the application is already registered as a customer under the particular
@@ -154,13 +127,12 @@ public class ZarinpalSubscriptionCreationWorkflowExecutor extends WorkflowExecut
                 if (monetizationPlatformCustomer.getCustomerId() == null) {
                     monetizationPlatformCustomer = createMonetizationPlatformCutomer(subscriber);
                 }
-                monetizationSharedCustomer = createSharedCustomer(subscriber.getEmail(), monetizationPlatformCustomer,
-                        requestOptions, subWorkFlowDTO);
+                monetizationSharedCustomer = createSharedCustomer(monetizationPlatformCustomer, subWorkFlowDTO);
             }
             //creating Subscriptions
             int apiId = ApiMgtDAO.getInstance().getAPIID(api.getId(), null);
             String planId = zarinpalMonetizationDAO.getBillingEnginePlanIdForTier(apiId, subWorkFlowDTO.getTierName());
-            createMonetizedSubscriptions(planId, monetizationSharedCustomer, requestOptions, subWorkFlowDTO);
+            createMonetizedSubscriptions(planId, monetizationSharedCustomer, subWorkFlowDTO);
         } catch (APIManagementException e) {
             String errorMessage = "Could not monetize subscription for API : " + subWorkFlowDTO.getApiName()
                     + " by Application : " + subWorkFlowDTO.getApplicationName();
@@ -179,38 +151,14 @@ public class ZarinpalSubscriptionCreationWorkflowExecutor extends WorkflowExecut
     public WorkflowResponse monetizeSubscription(WorkflowDTO workflowDTO, APIProduct apiProduct)
             throws WorkflowException {
 
-        boolean isMonetizationEnabled = false;
         SubscriptionWorkflowDTO subWorkFlowDTO = null;
-        String zarinpalPlatformAccountKey = null;
         Subscriber subscriber = null;
-        Customer customer = null;
-        Customer sharedCustomerBE = null;
         MonetizationPlatformCustomer monetizationPlatformCustomer;
         MonetizationSharedCustomer monetizationSharedCustomer;
         ApiMgtDAO apiMgtDAO = ApiMgtDAO.getInstance();
         subWorkFlowDTO = (SubscriptionWorkflowDTO) workflowDTO;
-        //read the platform account key of Zarinpal
-        Zarinpal.apiKey = getPlatformAccountKey(subWorkFlowDTO.getTenantId());
-        String connectedAccountKey = StringUtils.EMPTY;
-        Map<String, String> monetizationProperties = new Gson().fromJson(apiProduct.getMonetizationProperties().toString(),
-                HashMap.class);
-        if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
-            connectedAccountKey = monetizationProperties.get
-                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
-            if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account zarinpal key was not found for : "
-                        + apiProduct.getId().getName();
-                log.error(errorMessage);
-                throw new WorkflowException(errorMessage);
-            }
-        } else {
-            String errorMessage = "Zarinpal key of the connected account is empty.";
-            log.error(errorMessage);
-            throw new WorkflowException(errorMessage);
-        }
+
         //needed to create artifacts in the zarinpal connected account
-        RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
         try {
             subscriber = apiMgtDAO.getSubscriber(subWorkFlowDTO.getSubscriber());
             // check whether the application is already registered as a customer under the particular
@@ -225,13 +173,12 @@ public class ZarinpalSubscriptionCreationWorkflowExecutor extends WorkflowExecut
                 if (monetizationPlatformCustomer.getCustomerId() == null) {
                     monetizationPlatformCustomer = createMonetizationPlatformCutomer(subscriber);
                 }
-                monetizationSharedCustomer = createSharedCustomer(subscriber.getEmail(), monetizationPlatformCustomer,
-                        requestOptions, subWorkFlowDTO);
+                monetizationSharedCustomer = createSharedCustomer(monetizationPlatformCustomer, subWorkFlowDTO);
             }
             //creating Subscriptions
             int apiId = ApiMgtDAO.getInstance().getAPIProductId(apiProduct.getId());
             String planId = zarinpalMonetizationDAO.getBillingEnginePlanIdForTier(apiId, subWorkFlowDTO.getTierName());
-            createMonetizedSubscriptions(planId, monetizationSharedCustomer, requestOptions, subWorkFlowDTO);
+            createMonetizedSubscriptions(planId, monetizationSharedCustomer, subWorkFlowDTO);
         } catch (APIManagementException e) {
             String errorMessage = "Could not monetize subscription for : " + subWorkFlowDTO.getApiName()
                     + " by application : " + subWorkFlowDTO.getApplicationName();
@@ -289,70 +236,37 @@ public class ZarinpalSubscriptionCreationWorkflowExecutor extends WorkflowExecut
     /**
      * The method creates a Shared Customer in billing engine
      *
-     * @param email            Email of the subscriber
      * @param platformCustomer Monetization customer details created under platform account
-     * @param requestOptions   contains credentials to make api requests on behalf of the connected account
      * @param subWorkFlowDTO   The WorkflowDTO which contains workflow contextual information related to the workflow
      * @return MonetizationSharedCustomer Object with the details of the created shared customer
      * @throws WorkflowException
      */
-    public MonetizationSharedCustomer createSharedCustomer(String email, MonetizationPlatformCustomer platformCustomer,
-                                                           RequestOptions requestOptions,
+    public MonetizationSharedCustomer createSharedCustomer(MonetizationPlatformCustomer platformCustomer,
                                                            SubscriptionWorkflowDTO subWorkFlowDTO)
             throws WorkflowException {
 
-        Customer zarinpalCustomer;
         MonetizationSharedCustomer monetizationSharedCustomer = new MonetizationSharedCustomer();
-        Token token;
+
         try {
-            Map<String, Object> params = new HashMap<String, Object>();
-            params.put(ZarinpalMonetizationConstants.CUSTOMER, platformCustomer.getCustomerId());
-            //creating a token using the platform customers source
-            token = Token.create(params, requestOptions);
-        } catch (ZarinpalException ex) {
-            String errorMsg = "Error when creating a zarinpal token for" + platformCustomer.getSubscriberName();
-            log.error(errorMsg);
+            monetizationSharedCustomer.setApplicationId(subWorkFlowDTO.getApplicationId());
+            monetizationSharedCustomer.setApiProvider(subWorkFlowDTO.getApiProvider());
+            monetizationSharedCustomer.setTenantId(subWorkFlowDTO.getTenantId());
+            monetizationSharedCustomer.setSharedCustomerId(UUID.randomUUID().toString());
+            monetizationSharedCustomer.setParentCustomerId(platformCustomer.getId());
+            //returns the ID of the inserted record
+            int id = zarinpalMonetizationDAO.addBESharedCustomer(monetizationSharedCustomer);
+            monetizationSharedCustomer.setId(id);
+        } catch (ZarinpalMonetizationException ex) {
+            String errorMsg = "Error when inserting shared customer details of Application : "
+                    + subWorkFlowDTO.getApplicationName() + "to database";
+            log.error(errorMsg, ex);
             throw new WorkflowException(errorMsg, ex);
         }
-        Map<String, Object> sharedCustomerParams = new HashMap<>();
-        //if the email id of subscriber is empty, a customer object in billing engine will be created without email id
-        if (!StringUtils.isEmpty(email)) {
-            sharedCustomerParams.put(ZarinpalMonetizationConstants.CUSTOMER_EMAIL, email);
-        }
-        try {
-            sharedCustomerParams.put(ZarinpalMonetizationConstants.CUSTOMER_DESCRIPTION, "Shared Customer for "
-                    + subWorkFlowDTO.getApplicationName() + ZarinpalMonetizationConstants.FILE_SEPERATOR
-                    + subWorkFlowDTO.getSubscriber());
-            sharedCustomerParams.put(ZarinpalMonetizationConstants.CUSTOMER_SOURCE, token.getId());
-            zarinpalCustomer = Customer.create(sharedCustomerParams, requestOptions);
-            try {
-                monetizationSharedCustomer.setApplicationId(subWorkFlowDTO.getApplicationId());
-                monetizationSharedCustomer.setApiProvider(subWorkFlowDTO.getApiProvider());
-                monetizationSharedCustomer.setTenantId(subWorkFlowDTO.getTenantId());
-                monetizationSharedCustomer.setSharedCustomerId(zarinpalCustomer.getId());
-                monetizationSharedCustomer.setParentCustomerId(platformCustomer.getId());
-                //returns the ID of the inserted record
-                int id = zarinpalMonetizationDAO.addBESharedCustomer(monetizationSharedCustomer);
-                monetizationSharedCustomer.setId(id);
-            } catch (ZarinpalMonetizationException ex) {
-                //deleting the created customer in zarinpal if it fails to create the DB record
-                zarinpalCustomer.delete(requestOptions);
-                String errorMsg = "Error when inserting Zarinpal shared customer details of Application : "
-                        + subWorkFlowDTO.getApplicationName() + "to database";
-                log.error(errorMsg, ex);
-                throw new WorkflowException(errorMsg, ex);
-            }
-            if (log.isDebugEnabled()) {
-                String msg = "A customer for Application " + subWorkFlowDTO.getApplicationName()
-                        + " is created under the " + subWorkFlowDTO.getApiProvider()
-                        + "'s connected account in Zarinpal";
-                log.debug(msg);
-            }
-        } catch (ZarinpalException ex) {
-            String errorMsg = "Error while creating a shared customer in Zarinpal for Application : "
-                    + subWorkFlowDTO.getApplicationName();
-            log.error(errorMsg);
-            throw new WorkflowException(errorMsg, ex);
+        if (log.isDebugEnabled()) {
+            String msg = "A customer for Application " + subWorkFlowDTO.getApplicationName()
+                    + " is created under the " + subWorkFlowDTO.getApiProvider()
+                    + "'s connected account in Zarinpal";
+            log.debug(msg);
         }
         return monetizationSharedCustomer;
     }
@@ -362,57 +276,29 @@ public class ZarinpalSubscriptionCreationWorkflowExecutor extends WorkflowExecut
      *
      * @param planId         plan Id of the Zarinpal monetization plan
      * @param sharedCustomer contains info about the customer created in the provider account of Zarinpal
-     * @param requestOptions contains connected account credential needed for Zarinpal transactions
      * @param subWorkFlowDTO The WorkflowDTO which contains workflow contextual information related to the workflow
      * @throws WorkflowException
      */
     public void createMonetizedSubscriptions(String planId, MonetizationSharedCustomer sharedCustomer,
-                                             RequestOptions requestOptions, SubscriptionWorkflowDTO subWorkFlowDTO)
+                                             SubscriptionWorkflowDTO subWorkFlowDTO)
             throws WorkflowException {
 
         ZarinpalMonetizationDAO zarinpalMonetizationDAO = ZarinpalMonetizationDAO.getInstance();
         APIIdentifier identifier = new APIIdentifier(subWorkFlowDTO.getApiProvider(), subWorkFlowDTO.getApiName(),
                 subWorkFlowDTO.getApiVersion());
-        Subscription subscription = null;
         try {
-            Map<String, Object> item = new HashMap<String, Object>();
-            item.put(ZarinpalMonetizationConstants.PLAN, planId);
-            Map<String, Object> items = new HashMap<String, Object>();
-            //adding a subscription item, with an attached plan.
-            items.put("0", item);
-            Map<String, Object> subParams = new HashMap<String, Object>();
-            subParams.put(ZarinpalMonetizationConstants.CUSTOMER, sharedCustomer.getSharedCustomerId());
-            subParams.put(ZarinpalMonetizationConstants.ITEMS, items);
-            try {
-                //create a subscritpion in zarinpal under the API Providers Connected Account
-                subscription = Subscription.create(subParams, requestOptions);
-            } catch (ZarinpalException ex) {
-                String errorMsg = "Error when adding a subscription in Zarinpal for Application : " +
-                        subWorkFlowDTO.getApplicationName();
-                log.error(errorMsg);
-                throw new WorkflowException(errorMsg, ex);
-            }
-            try {
-                zarinpalMonetizationDAO.addBESubscription(identifier, subWorkFlowDTO.getApplicationId(),
-                        subWorkFlowDTO.getTenantId(), sharedCustomer.getId(), subscription.getId());
-            } catch (ZarinpalMonetizationException e) {
-                //delete the subscription in Zarinpal, if the entry to database fails in API Manager
-                subscription.cancel((Map<String, Object>) null, requestOptions);
-                String errorMsg = "Error when adding zarinpal subscription details of Application "
-                        + subWorkFlowDTO.getApplicationName() + " to Database";
-                log.error(errorMsg);
-                throw new WorkflowException(errorMsg, e);
-            }
-            if (log.isDebugEnabled()) {
-                String msg = "Zarinpal subscription for " + subWorkFlowDTO.getApplicationName() + " is created for"
-                        + subWorkFlowDTO.getApiName() + " API";
-                log.debug(msg);
-            }
-        } catch (ZarinpalException ex) {
-            String errorMessage = "Failed to create subscription in Zarinpal for API : " + subWorkFlowDTO.getApiName()
-                    + "by Application : " + subWorkFlowDTO.getApplicationName();
-            log.error(errorMessage);
-            throw new WorkflowException(errorMessage, ex);
+            zarinpalMonetizationDAO.addBESubscription(identifier, subWorkFlowDTO.getApplicationId(),
+                    subWorkFlowDTO.getTenantId(), sharedCustomer.getId(), UUID.randomUUID().toString(), planId);
+        } catch (ZarinpalMonetizationException e) {
+            String errorMsg = "Error when adding zarinpal subscription details of Application "
+                    + subWorkFlowDTO.getApplicationName() + " to Database";
+            log.error(errorMsg);
+            throw new WorkflowException(errorMsg, e);
+        }
+        if (log.isDebugEnabled()) {
+            String msg = "Zarinpal subscription for " + subWorkFlowDTO.getApplicationName() + " is created for"
+                    + subWorkFlowDTO.getApiName() + " API";
+            log.debug(msg);
         }
     }
 
@@ -427,39 +313,21 @@ public class ZarinpalSubscriptionCreationWorkflowExecutor extends WorkflowExecut
             throws WorkflowException {
 
         MonetizationPlatformCustomer monetizationPlatformCustomer = new MonetizationPlatformCustomer();
-        Customer customer = null;
+
+        //create a customer for subscriber in the platform account
+        monetizationPlatformCustomer.setCustomerId(UUID.randomUUID().toString());
         try {
-            Map<String, Object> customerParams = new HashMap<String, Object>();
-            //Customer object in billing engine will be created without the email id
-            if (!StringUtils.isEmpty(subscriber.getEmail())) {
-                customerParams.put(ZarinpalMonetizationConstants.CUSTOMER_EMAIL, subscriber.getEmail());
-            }
-            customerParams.put(ZarinpalMonetizationConstants.CUSTOMER_DESCRIPTION, "Customer for "
-                    + subscriber.getName());
-            customerParams.put(ZarinpalMonetizationConstants.CUSTOMER_SOURCE, ZarinpalMonetizationConstants.DEFAULT_TOKEN);
-            //create a customer for subscriber in the platform account
-            customer = Customer.create(customerParams);
-            monetizationPlatformCustomer.setCustomerId(customer.getId());
-            try {
-                //returns the id of the inserted record
-                int id = zarinpalMonetizationDAO.addBEPlatformCustomer(subscriber.getId(), subscriber.getTenantId(),
-                        customer.getId());
-                monetizationPlatformCustomer.setId(id);
-            } catch (ZarinpalMonetizationException e) {
-                if (customer != null) {
-                    // deletes the customer if the customer is created in Zarinpal and failed to update in DB
-                    customer.delete();
-                }
-                String errorMsg = "Error when inserting zarinpal customer details of " + subscriber.getName()
-                        + " to Database";
-                log.error(errorMsg);
-                throw new WorkflowException(errorMsg, e);
-            }
-        } catch (ZarinpalException ex) {
-            String errorMsg = "Error while creating a customer in Zarinpal for " + subscriber.getName();
+            //returns the id of the inserted record
+            int id = zarinpalMonetizationDAO.addBEPlatformCustomer(subscriber.getId(), subscriber.getTenantId(),
+                    monetizationPlatformCustomer.getCustomerId());
+            monetizationPlatformCustomer.setId(id);
+        } catch (ZarinpalMonetizationException e) {
+            String errorMsg = "Error when inserting zarinpal customer details of " + subscriber.getName()
+                    + " to Database";
             log.error(errorMsg);
-            throw new WorkflowException(errorMsg, ex);
+            throw new WorkflowException(errorMsg, e);
         }
+
         return monetizationPlatformCustomer;
     }
 
