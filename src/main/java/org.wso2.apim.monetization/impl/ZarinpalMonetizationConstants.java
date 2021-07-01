@@ -17,12 +17,12 @@
 package org.wso2.apim.monetization.impl;
 
 /**
- * This class is to define constants related to stripe based monetization
+ * This class is to define constants related to zarinpal based monetization
  */
-public class StripeMonetizationConstants {
+public class ZarinpalMonetizationConstants {
 
     /**
-     * Stripe based monetization related constants
+     * Zarinpal based monetization related constants
      **/
     public static final String ADD_MONETIZATION_DATA_SQL = "INSERT INTO AM_MONETIZATION VALUES (?,?,?,?)";
     public static final String DELETE_MONETIZATION_DATA_SQL = "DELETE FROM AM_MONETIZATION WHERE API_ID = ?";

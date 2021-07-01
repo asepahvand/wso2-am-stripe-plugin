@@ -19,7 +19,7 @@
 package org.wso2.apim.monetization.impl.model;
 
 /**
- * This class is to define the properties of shared customer in stripe
+ * This class is to define the properties of shared customer in zarinpal
  */
 public class MonetizationSharedCustomer {
 

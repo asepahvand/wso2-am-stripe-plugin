@@ -38,22 +38,22 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * This class is used to handle database related actions when configuring monetization with stripe
+ * This class is used to handle database related actions when configuring monetization with zarinpal
  */
-public class StripeMonetizationDAO {
+public class ZarinpalMonetizationDAO {
 
-    private static final Log log = LogFactory.getLog(StripeMonetizationDAO.class);
+    private static final Log log = LogFactory.getLog(ZarinpalMonetizationDAO.class);
     private ApiMgtDAO apiMgtDAO = ApiMgtDAO.getInstance();
-    private static StripeMonetizationDAO INSTANCE = null;
+    private static ZarinpalMonetizationDAO INSTANCE = null;
 
     /**
-     * Method to get the instance of the StripeMonetizationDAO.
+     * Method to get the instance of the ZarinpalMonetizationDAO.
      *
-     * @return {@link StripeMonetizationDAO} instance
+     * @return {@link ZarinpalMonetizationDAO} instance
      */
-    public static StripeMonetizationDAO getInstance() {
+    public static ZarinpalMonetizationDAO getInstance() {
         if (INSTANCE == null) {
-            INSTANCE = new StripeMonetizationDAO();
+            INSTANCE = new ZarinpalMonetizationDAO();
         }
         return INSTANCE;
     }
@@ -64,17 +64,17 @@ public class StripeMonetizationDAO {
      * @param policy    subscription policy
      * @param productId product id (in the billing engine)
      * @param planId    plan id (in the billing engine)
-     * @throws StripeMonetizationException if failed to add monetization plan data to the database
+     * @throws ZarinpalMonetizationException if failed to add monetization plan data to the database
      */
     public void addMonetizationPlanData(SubscriptionPolicy policy, String productId, String planId)
-            throws StripeMonetizationException {
+            throws ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement policyStatement = null;
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            policyStatement = conn.prepareStatement(StripeMonetizationConstants.INSERT_MONETIZATION_PLAN_DATA_SQL);
+            policyStatement = conn.prepareStatement(ZarinpalMonetizationConstants.INSERT_MONETIZATION_PLAN_DATA_SQL);
             policyStatement.setString(1, apiMgtDAO.getSubscriptionPolicy(policy.getPolicyName(),
                     policy.getTenantId()).getUUID());
             policyStatement.setString(2, productId);
@@ -88,17 +88,17 @@ public class StripeMonetizationDAO {
                 } catch (SQLException ex) {
                     String errorMessage = "Failed to rollback adding monetization plan for : " + policy.getPolicyName();
                     log.error(errorMessage);
-                    throw new StripeMonetizationException(errorMessage, ex);
+                    throw new ZarinpalMonetizationException(errorMessage, ex);
                 }
             }
             String errorMessage = "Failed to add monetization plan for : " + policy.getPolicyName();
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } catch (APIManagementException e) {
             String errorMessage = "Failed to get subscription policy : " + policy.getPolicyName() +
-                    " from database when creating stripe plan.";
+                    " from database when creating zarinpal plan.";
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(policyStatement, conn, null);
         }
@@ -109,9 +109,9 @@ public class StripeMonetizationDAO {
      *
      * @param policy subscription policy
      * @return plan data of subscription policy
-     * @throws StripeMonetizationException if failed to get plan data
+     * @throws ZarinpalMonetizationException if failed to get plan data
      */
-    public Map<String, String> getPlanData(SubscriptionPolicy policy) throws StripeMonetizationException {
+    public Map<String, String> getPlanData(SubscriptionPolicy policy) throws ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement ps = null;
@@ -120,22 +120,22 @@ public class StripeMonetizationDAO {
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            ps = conn.prepareStatement(StripeMonetizationConstants.GET_BILLING_PLAN_DATA);
+            ps = conn.prepareStatement(ZarinpalMonetizationConstants.GET_BILLING_PLAN_DATA);
             ps.setString(1, apiMgtDAO.getSubscriptionPolicy(policy.getPolicyName(), policy.getTenantId()).getUUID());
             rs = ps.executeQuery();
             while (rs.next()) {
-                planData.put(StripeMonetizationConstants.PRODUCT_ID, rs.getString("PRODUCT_ID"));
-                planData.put(StripeMonetizationConstants.PLAN_ID, rs.getString("PLAN_ID"));
+                planData.put(ZarinpalMonetizationConstants.PRODUCT_ID, rs.getString("PRODUCT_ID"));
+                planData.put(ZarinpalMonetizationConstants.PLAN_ID, rs.getString("PLAN_ID"));
             }
         } catch (SQLException e) {
             String errorMessage = "Error while getting plan data for : " + policy.getPolicyName() + " policy.";
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } catch (APIManagementException e) {
             String errorMessage = "Failed to get subscription policy : " + policy.getPolicyName() +
                     " when getting plan data.";
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, rs);
         }
@@ -148,17 +148,17 @@ public class StripeMonetizationDAO {
      * @param policy    subscription policy
      * @param productId product id (in the billing engine)
      * @param planId    plan id (in the billing engine)
-     * @throws StripeMonetizationException if failed to update monetization plan data to the database
+     * @throws ZarinpalMonetizationException if failed to update monetization plan data to the database
      */
     public void updateMonetizationPlanData(SubscriptionPolicy policy, String productId, String planId)
-            throws StripeMonetizationException {
+            throws ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement policyStatement = null;
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            policyStatement = conn.prepareStatement(StripeMonetizationConstants.UPDATE_MONETIZATION_PLAN_ID_SQL);
+            policyStatement = conn.prepareStatement(ZarinpalMonetizationConstants.UPDATE_MONETIZATION_PLAN_ID_SQL);
             policyStatement.setString(1, planId);
             policyStatement.setString(2, apiMgtDAO.getSubscriptionPolicy(policy.getPolicyName(),
                     policy.getTenantId()).getUUID());
@@ -173,17 +173,17 @@ public class StripeMonetizationDAO {
                     String errorMessage = "Failed to rollback the update monetization plan action for policy : " +
                             policy.getPolicyName();
                     log.error(errorMessage);
-                    throw new StripeMonetizationException(errorMessage, ex);
+                    throw new ZarinpalMonetizationException(errorMessage, ex);
                 }
             }
             String errorMessage = "Failed to update monetization plan for policy: " + policy;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } catch (APIManagementException e) {
             String errorMessage = "Failed to get subscription policy : " + policy.getPolicyName() +
                     " when updating monetization plan data.";
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
 
         } finally {
             APIMgtDBUtil.closeAllConnections(policyStatement, conn, null);
@@ -194,16 +194,16 @@ public class StripeMonetizationDAO {
      * Delete monetization plan data from the database
      *
      * @param policy subscription policy
-     * @throws StripeMonetizationException if failed to delete monetization plan data from the database
+     * @throws ZarinpalMonetizationException if failed to delete monetization plan data from the database
      */
-    public void deleteMonetizationPlanData(SubscriptionPolicy policy) throws StripeMonetizationException {
+    public void deleteMonetizationPlanData(SubscriptionPolicy policy) throws ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement policyStatement = null;
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            policyStatement = conn.prepareStatement(StripeMonetizationConstants.DELETE_MONETIZATION_PLAN_DATA);
+            policyStatement = conn.prepareStatement(ZarinpalMonetizationConstants.DELETE_MONETIZATION_PLAN_DATA);
             policyStatement.setString(1, apiMgtDAO.getSubscriptionPolicy(policy.getPolicyName(),
                     policy.getTenantId()).getUUID());
             policyStatement.executeUpdate();
@@ -216,17 +216,17 @@ public class StripeMonetizationDAO {
                     String errorMessage = "Failed to rollback the delete monetization plan action for policy : " +
                             policy.getPolicyName();
                     log.error(errorMessage);
-                    throw new StripeMonetizationException(errorMessage, ex);
+                    throw new ZarinpalMonetizationException(errorMessage, ex);
                 }
             }
             String errorMessage = "Failed to delete the monetization plan action for policy : " + policy.getPolicyName();
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } catch (APIManagementException e) {
             String errorMessage = "Failed to get policy : " + policy.getPolicyName() +
                     " when deleting monetization plan.";
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(policyStatement, conn, null);
         }
@@ -238,7 +238,7 @@ public class StripeMonetizationDAO {
      * @param apiId API ID
      * @return billing engine product ID of the give API
      */
-    public String getBillingEngineProductId(int apiId) throws StripeMonetizationException {
+    public String getBillingEngineProductId(int apiId) throws ZarinpalMonetizationException {
 
         String billingEngineProductId = null;
         Connection connection = null;
@@ -246,7 +246,7 @@ public class StripeMonetizationDAO {
         try {
             connection = APIMgtDBUtil.getConnection();
             connection.setAutoCommit(false);
-            statement = connection.prepareStatement(StripeMonetizationConstants.GET_BILLING_ENGINE_PRODUCT_BY_API);
+            statement = connection.prepareStatement(ZarinpalMonetizationConstants.GET_BILLING_ENGINE_PRODUCT_BY_API);
             statement.setInt(1, apiId);
             ResultSet rs = statement.executeQuery();
             while (rs.next()) {
@@ -256,7 +256,7 @@ public class StripeMonetizationDAO {
         } catch (SQLException e) {
             String errorMessage = "Failed to get billing engine product ID of API : " + apiId;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(statement, connection, null);
         }
@@ -269,9 +269,9 @@ public class StripeMonetizationDAO {
      * @param apiID    API ID
      * @param tierName tier name
      * @return billing plan ID for a given tier
-     * @throws StripeMonetizationException if failed to get billing plan ID for a given tier
+     * @throws ZarinpalMonetizationException if failed to get billing plan ID for a given tier
      */
-    public String getBillingEnginePlanIdForTier(int apiID, String tierName) throws StripeMonetizationException {
+    public String getBillingEnginePlanIdForTier(int apiID, String tierName) throws ZarinpalMonetizationException {
 
         Connection connection = null;
         PreparedStatement statement = null;
@@ -279,7 +279,7 @@ public class StripeMonetizationDAO {
         try {
             connection = APIMgtDBUtil.getConnection();
             connection.setAutoCommit(false);
-            statement = connection.prepareStatement(StripeMonetizationConstants.GET_BILLING_PLAN_FOR_TIER);
+            statement = connection.prepareStatement(ZarinpalMonetizationConstants.GET_BILLING_PLAN_FOR_TIER);
             statement.setInt(1, apiID);
             statement.setString(2, tierName);
             ResultSet rs = statement.executeQuery();
@@ -290,7 +290,7 @@ public class StripeMonetizationDAO {
         } catch (SQLException e) {
             String errorMessage = "Failed to get billing plan ID tier : " + tierName;
             log.error(errorMessage, e);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(statement, connection, null);
         }
@@ -301,12 +301,12 @@ public class StripeMonetizationDAO {
      * This method is used to add monetization data to the DB
      *
      * @param apiId       API ID
-     * @param productId   stripe product ID
-     * @param tierPlanMap stripe plan and tier mapping
-     * @throws StripeMonetizationException if failed to add monetization data to the DB
+     * @param productId   zarinpal product ID
+     * @param tierPlanMap zarinpal plan and tier mapping
+     * @throws ZarinpalMonetizationException if failed to add monetization data to the DB
      */
     public void addMonetizationData(int apiId, String productId, Map<String, String> tierPlanMap)
-            throws StripeMonetizationException {
+            throws ZarinpalMonetizationException {
 
         PreparedStatement preparedStatement = null;
         Connection connection = null;
@@ -314,7 +314,7 @@ public class StripeMonetizationDAO {
         try {
             if (!tierPlanMap.isEmpty()) {
                 connection = APIMgtDBUtil.getConnection();
-                preparedStatement = connection.prepareStatement(StripeMonetizationConstants.ADD_MONETIZATION_DATA_SQL);
+                preparedStatement = connection.prepareStatement(ZarinpalMonetizationConstants.ADD_MONETIZATION_DATA_SQL);
                 initialAutoCommit = connection.getAutoCommit();
                 connection.setAutoCommit(false);
                 for (Map.Entry<String, String> entry : tierPlanMap.entrySet()) {
@@ -335,7 +335,7 @@ public class StripeMonetizationDAO {
             } catch (SQLException ex) {
                 String errorMessage = "Failed to rollback add monetization data for API : " + apiId;
                 log.error(errorMessage, e);
-                throw new StripeMonetizationException(errorMessage, e);
+                throw new ZarinpalMonetizationException(errorMessage, e);
             } finally {
                 APIMgtDBUtil.setAutoCommit(connection, initialAutoCommit);
             }
@@ -349,9 +349,9 @@ public class StripeMonetizationDAO {
      *
      * @param tierUUID tier UUID
      * @return billing plan ID for a given tier
-     * @throws StripeMonetizationException if failed to get billing plan ID for a given tier
+     * @throws ZarinpalMonetizationException if failed to get billing plan ID for a given tier
      */
-    public String getBillingPlanId(String tierUUID) throws StripeMonetizationException {
+    public String getBillingPlanId(String tierUUID) throws ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement ps = null;
@@ -360,16 +360,16 @@ public class StripeMonetizationDAO {
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            ps = conn.prepareStatement(StripeMonetizationConstants.GET_BILLING_PLAN_ID);
+            ps = conn.prepareStatement(ZarinpalMonetizationConstants.GET_BILLING_PLAN_ID);
             ps.setString(1, tierUUID);
             rs = ps.executeQuery();
             while (rs.next()) {
                 planId = rs.getString("PLAN_ID");
             }
         } catch (SQLException e) {
-            String errorMessage = "Error while getting stripe plan ID for tier UUID : " + tierUUID;
+            String errorMessage = "Error while getting zarinpal plan ID for tier UUID : " + tierUUID;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, rs);
         }
@@ -381,9 +381,9 @@ public class StripeMonetizationDAO {
      *
      * @param subscriptionId subscription ID
      * @return subscription UUID
-     * @throws StripeMonetizationException if failed to get subscription UUID given the subscription ID
+     * @throws ZarinpalMonetizationException if failed to get subscription UUID given the subscription ID
      */
-    public String getSubscriptionUUID(int subscriptionId) throws StripeMonetizationException {
+    public String getSubscriptionUUID(int subscriptionId) throws ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement ps = null;
@@ -392,7 +392,7 @@ public class StripeMonetizationDAO {
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            ps = conn.prepareStatement(StripeMonetizationConstants.GET_SUBSCRIPTION_UUID);
+            ps = conn.prepareStatement(ZarinpalMonetizationConstants.GET_SUBSCRIPTION_UUID);
             ps.setInt(1, subscriptionId);
             rs = ps.executeQuery();
             while (rs.next()) {
@@ -401,7 +401,7 @@ public class StripeMonetizationDAO {
         } catch (SQLException e) {
             String errorMessage = "Error while getting UUID of subscription ID : " + subscriptionId;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, rs);
         }
@@ -409,56 +409,56 @@ public class StripeMonetizationDAO {
     }
 
     /**
-     * This method is used to get stripe plan and tier mapping
+     * This method is used to get zarinpal plan and tier mapping
      *
      * @param apiID           API ID
-     * @param stripeProductId stripe product ID
-     * @return mapping between tier and stripe plans
-     * @throws StripeMonetizationException if failed to get mapping between tier and stripe plans
+     * @param zarinpalProductId zarinpal product ID
+     * @return mapping between tier and zarinpal plans
+     * @throws ZarinpalMonetizationException if failed to get mapping between tier and zarinpal plans
      */
-    public Map<String, String> getTierToBillingEnginePlanMapping(int apiID, String stripeProductId)
-            throws StripeMonetizationException {
+    public Map<String, String> getTierToBillingEnginePlanMapping(int apiID, String zarinpalProductId)
+            throws ZarinpalMonetizationException {
 
-        Map<String, String> stripePlanTierMap = new HashMap<String, String>();
+        Map<String, String> zarinpalPlanTierMap = new HashMap<String, String>();
         Connection connection = null;
         PreparedStatement statement = null;
         try {
             connection = APIMgtDBUtil.getConnection();
             connection.setAutoCommit(false);
-            statement = connection.prepareStatement(StripeMonetizationConstants.GET_BILLING_PLANS_BY_PRODUCT);
+            statement = connection.prepareStatement(ZarinpalMonetizationConstants.GET_BILLING_PLANS_BY_PRODUCT);
             statement.setInt(1, apiID);
-            statement.setString(2, stripeProductId);
+            statement.setString(2, zarinpalProductId);
             ResultSet rs = statement.executeQuery();
             while (rs.next()) {
                 String tierName = rs.getString("TIER_NAME");
-                String stripePlanId = rs.getString("STRIPE_PLAN_ID");
-                stripePlanTierMap.put(tierName, stripePlanId);
+                String zarinpalPlanId = rs.getString("STRIPE_PLAN_ID");
+                zarinpalPlanTierMap.put(tierName, zarinpalPlanId);
             }
             connection.commit();
         } catch (SQLException e) {
-            String errorMessage = "Failed to get stripe plan and tier mapping for API : " + apiID;
+            String errorMessage = "Failed to get zarinpal plan and tier mapping for API : " + apiID;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(statement, connection, null);
         }
-        return stripePlanTierMap;
+        return zarinpalPlanTierMap;
     }
 
     /**
      * This method deletes monetization data for a given API from the DB
      *
      * @param apiId API ID
-     * @throws StripeMonetizationException if failed to delete monetization data
+     * @throws ZarinpalMonetizationException if failed to delete monetization data
      */
-    public void deleteMonetizationData(int apiId) throws StripeMonetizationException {
+    public void deleteMonetizationData(int apiId) throws ZarinpalMonetizationException {
 
         Connection connection = null;
         PreparedStatement statement = null;
         boolean initialAutoCommit = false;
         try {
             connection = APIMgtDBUtil.getConnection();
-            statement = connection.prepareStatement(StripeMonetizationConstants.DELETE_MONETIZATION_DATA_SQL);
+            statement = connection.prepareStatement(ZarinpalMonetizationConstants.DELETE_MONETIZATION_DATA_SQL);
             initialAutoCommit = connection.getAutoCommit();
             connection.setAutoCommit(false);
             statement.setInt(1, apiId);
@@ -472,7 +472,7 @@ public class StripeMonetizationDAO {
             } catch (SQLException ex) {
                 String errorMessage = "Failed to delete monetization data for API : " + apiId;
                 log.error(errorMessage);
-                throw new StripeMonetizationException(errorMessage, e);
+                throw new ZarinpalMonetizationException(errorMessage, e);
             } finally {
                 APIMgtDBUtil.setAutoCommit(connection, initialAutoCommit);
             }
@@ -487,9 +487,9 @@ public class StripeMonetizationDAO {
      * @param apiId         API ID
      * @param applicationId Application ID
      * @return Billing Engine Subscription ID
-     * @throws StripeMonetizationException If Failed To Get Billing Engine Subscription ID
+     * @throws ZarinpalMonetizationException If Failed To Get Billing Engine Subscription ID
      */
-    public String getBillingEngineSubscriptionId(int apiId, int applicationId) throws StripeMonetizationException {
+    public String getBillingEngineSubscriptionId(int apiId, int applicationId) throws ZarinpalMonetizationException {
 
         String billingEngineSubscriptionId = null;
         Connection connection = null;
@@ -497,7 +497,7 @@ public class StripeMonetizationDAO {
         try {
             connection = APIMgtDBUtil.getConnection();
             connection.setAutoCommit(false);
-            statement = connection.prepareStatement(StripeMonetizationConstants.GET_BILLING_ENGINE_SUBSCRIPTION_ID);
+            statement = connection.prepareStatement(ZarinpalMonetizationConstants.GET_BILLING_ENGINE_SUBSCRIPTION_ID);
             statement.setInt(1, applicationId);
             statement.setInt(2, apiId);
             ResultSet rs = statement.executeQuery();
@@ -509,7 +509,7 @@ public class StripeMonetizationDAO {
             String errorMessage = "Failed to get billing engine subscription ID of API : " + apiId +
                     " and application ID : " + applicationId;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(statement, connection, null);
         }
@@ -521,12 +521,12 @@ public class StripeMonetizationDAO {
      *
      * @param subscriberId Subscriber's Id
      * @param tenantId     Id of tenant
-     * @param customerId   Id of the customer created in stripe
+     * @param customerId   Id of the customer created in zarinpal
      * @return Id of the customer record in the database
-     * @throws StripeMonetizationException If failed to add billing engine customer details
+     * @throws ZarinpalMonetizationException If failed to add billing engine customer details
      */
     public int addBEPlatformCustomer(int subscriberId, int tenantId, String customerId) throws
-            StripeMonetizationException {
+            ZarinpalMonetizationException {
 
         Connection conn = null;
         ResultSet rs = null;
@@ -535,7 +535,7 @@ public class StripeMonetizationDAO {
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            String query = StripeMonetizationConstants.ADD_BE_PLATFORM_CUSTOMER_SQL;
+            String query = ZarinpalMonetizationConstants.ADD_BE_PLATFORM_CUSTOMER_SQL;
             ps = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
             ps.setInt(1, subscriberId);
             ps.setInt(2, tenantId);
@@ -547,7 +547,7 @@ public class StripeMonetizationDAO {
             } else {
                 String errorMessage = "Failed to get ID of the monetized subscription. Subscriber ID : " +
                         subscriberId + " , tenant ID : " + tenantId + " , customer ID : " + customerId;
-                throw new StripeMonetizationException(errorMessage);
+                throw new ZarinpalMonetizationException(errorMessage);
             }
             conn.commit();
         } catch (SQLException e) {
@@ -558,9 +558,9 @@ public class StripeMonetizationDAO {
                     log.error("Error while rolling back the failed operation", ex);
                 }
             }
-            String errorMessage = "Failed to add Stripe platform customer details for Subscriber : " + subscriberId;
+            String errorMessage = "Failed to add Zarinpal platform customer details for Subscriber : " + subscriberId;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, rs);
         }
@@ -572,9 +572,9 @@ public class StripeMonetizationDAO {
      *
      * @param sharedCustomer object with Billing Engine Shared customer info
      * @return Id of the customer record in the database
-     * @throws StripeMonetizationException If Failed To add Billing Engine Shared Customer details
+     * @throws ZarinpalMonetizationException If Failed To add Billing Engine Shared Customer details
      */
-    public int addBESharedCustomer(MonetizationSharedCustomer sharedCustomer) throws StripeMonetizationException {
+    public int addBESharedCustomer(MonetizationSharedCustomer sharedCustomer) throws ZarinpalMonetizationException {
 
         Connection conn = null;
         ResultSet rs = null;
@@ -583,7 +583,7 @@ public class StripeMonetizationDAO {
         try {
             conn = APIMgtDBUtil.getConnection();
             conn.setAutoCommit(false);
-            String query = StripeMonetizationConstants.ADD_BE_SHARED_CUSTOMER_SQL;
+            String query = ZarinpalMonetizationConstants.ADD_BE_SHARED_CUSTOMER_SQL;
             ps = conn.prepareStatement(query, Statement.RETURN_GENERATED_KEYS);
             ps.setInt(1, sharedCustomer.getApplicationId());
             ps.setString(2, sharedCustomer.getApiProvider());
@@ -598,7 +598,7 @@ public class StripeMonetizationDAO {
                 String errorMessage = "Failed to set ID of the shared customer : " + sharedCustomer.getId() +
                         " , tenant ID : " + sharedCustomer.getTenantId() + " , application ID : " +
                         sharedCustomer.getApplicationId();
-                throw new StripeMonetizationException(errorMessage);
+                throw new ZarinpalMonetizationException(errorMessage);
             }
             conn.commit();
         } catch (SQLException e) {
@@ -613,7 +613,7 @@ public class StripeMonetizationDAO {
                     + " for Application with ID :" + sharedCustomer.getApplicationId()
                     + " under Provider : " + sharedCustomer.getApiProvider();
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, rs);
         }
@@ -629,10 +629,10 @@ public class StripeMonetizationDAO {
      * @param sharedCustomerId Id of the shared customer
      * @param subscriptionId   Id of the Billing Engine Subscriptions
      * @return Id of the customer record in the database
-     * @throws StripeMonetizationException If Failed To add Billing Engine Shared Customer details
+     * @throws ZarinpalMonetizationException If Failed To add Billing Engine Shared Customer details
      */
     public void addBESubscription(APIIdentifier identifier, int applicationId, int tenandId,
-                                  int sharedCustomerId, String subscriptionId) throws StripeMonetizationException {
+                                  int sharedCustomerId, String subscriptionId) throws ZarinpalMonetizationException {
 
         Connection conn = null;
         ResultSet rs = null;
@@ -646,9 +646,9 @@ public class StripeMonetizationDAO {
             } catch (APIManagementException e) {
                 String errorMessage = "Failed to get the ID of the API " + identifier.getApiName();
                 log.error(errorMessage);
-                throw new StripeMonetizationException(errorMessage, e);
+                throw new ZarinpalMonetizationException(errorMessage, e);
             }
-            String query = StripeMonetizationConstants.ADD_BE_SUBSCRIPTION_SQL;
+            String query = ZarinpalMonetizationConstants.ADD_BE_SUBSCRIPTION_SQL;
             ps = conn.prepareStatement(query);
             ps.setInt(1, apiId);
             ps.setInt(2, applicationId);
@@ -665,10 +665,10 @@ public class StripeMonetizationDAO {
                     log.error("Error while rolling back the failed operation", ex);
                 }
             }
-            String errorMessage = "Failed to add Stripe subscription info for API : " + identifier.getApiName() + " by"
+            String errorMessage = "Failed to add Zarinpal subscription info for API : " + identifier.getApiName() + " by"
                     + " Application : " + applicationId;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, rs);
         }
@@ -680,16 +680,16 @@ public class StripeMonetizationDAO {
      * @param subscriberId Id of the Subscriber
      * @param tenantId     Id of the tenant
      * @return MonetizationPlatformCustomer info of Billing Engine Platform Customer
-     * @throws StripeMonetizationException If Failed To get Billing Engine Platform Customer details
+     * @throws ZarinpalMonetizationException If Failed To get Billing Engine Platform Customer details
      */
     public MonetizationPlatformCustomer getPlatformCustomer(int subscriberId, int tenantId) throws
-            StripeMonetizationException {
+            ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement ps = null;
         ResultSet result = null;
         MonetizationPlatformCustomer monetizationPlatformCustomer = new MonetizationPlatformCustomer();
-        String sqlQuery = StripeMonetizationConstants.GET_BE_PLATFORM_CUSTOMER_SQL;
+        String sqlQuery = ZarinpalMonetizationConstants.GET_BE_PLATFORM_CUSTOMER_SQL;
         try {
             conn = APIMgtDBUtil.getConnection();
             ps = conn.prepareStatement(sqlQuery);
@@ -704,7 +704,7 @@ public class StripeMonetizationDAO {
             String errorMessage = "Failed to get billing engine platform customer details for Subscriber : " +
                     subscriberId;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, result);
         }
@@ -718,16 +718,16 @@ public class StripeMonetizationDAO {
      * @param apiProvider   api provider
      * @param tenantId      Id of the tenant
      * @return MonetizationPlatformCustomer info of Billing Engine Shared Customer
-     * @throws StripeMonetizationException If Failed To get Billing Engine Platform Shared details
+     * @throws ZarinpalMonetizationException If Failed To get Billing Engine Platform Shared details
      */
     public MonetizationSharedCustomer getSharedCustomer(int applicationId, String apiProvider,
-                                                        int tenantId) throws StripeMonetizationException {
+                                                        int tenantId) throws ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement ps = null;
         ResultSet result = null;
         MonetizationSharedCustomer monetizationSharedCustomer = new MonetizationSharedCustomer();
-        String sqlQuery = StripeMonetizationConstants.GET_BE_SHARED_CUSTOMER_SQL;
+        String sqlQuery = ZarinpalMonetizationConstants.GET_BE_SHARED_CUSTOMER_SQL;
         try {
             conn = APIMgtDBUtil.getConnection();
             ps = conn.prepareStatement(sqlQuery);
@@ -743,7 +743,7 @@ public class StripeMonetizationDAO {
             String errorMessage = "Failed to get billing Engine Shared Customer details for application with ID : " +
                     applicationId;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, result);
         }
@@ -754,14 +754,14 @@ public class StripeMonetizationDAO {
      * Remove billing engine subscription info
      *
      * @param id Id of the Subscription Info
-     * @throws StripeMonetizationException If failed to delete subscription details
+     * @throws ZarinpalMonetizationException If failed to delete subscription details
      */
-    public void removeMonetizedSubscription(int id) throws StripeMonetizationException {
+    public void removeMonetizedSubscription(int id) throws ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement ps = null;
         ResultSet result = null;
-        String sqlQuery = StripeMonetizationConstants.DELETE_BE_SUBSCRIPTION_SQL;
+        String sqlQuery = ZarinpalMonetizationConstants.DELETE_BE_SUBSCRIPTION_SQL;
         try {
             conn = APIMgtDBUtil.getConnection();
             ps = conn.prepareStatement(sqlQuery);
@@ -770,7 +770,7 @@ public class StripeMonetizationDAO {
         } catch (SQLException e) {
             String errorMessage = "Failed to remove monetization info from DB of subscription with ID : " + id;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, result);
         }
@@ -785,11 +785,11 @@ public class StripeMonetizationDAO {
      * @param applicationId Id of the Application
      * @param tenantDomain  tenant domain
      * @return MonetizationSubscription info of Billing Engine Subscription
-     * @throws StripeMonetizationException If Failed To get Billing Engine Subscription details
+     * @throws ZarinpalMonetizationException If Failed To get Billing Engine Subscription details
      */
     public MonetizedSubscription getMonetizedSubscription(String apiName, String apiVersion, String apiProvider,
                                                           int applicationId, String tenantDomain)
-            throws StripeMonetizationException {
+            throws ZarinpalMonetizationException {
 
         Connection conn = null;
         PreparedStatement ps = null;
@@ -798,7 +798,7 @@ public class StripeMonetizationDAO {
         MonetizedSubscription monetizedSubscription = new MonetizedSubscription();
         int tenantId = APIUtil.getTenantIdFromTenantDomain(tenantDomain);
         APIIdentifier identifier = new APIIdentifier(apiProvider, apiName, apiVersion);
-        String sqlQuery = StripeMonetizationConstants.GET_BE_SUBSCRIPTION_SQL;
+        String sqlQuery = ZarinpalMonetizationConstants.GET_BE_SUBSCRIPTION_SQL;
         try {
             conn = APIMgtDBUtil.getConnection();
             try {
@@ -806,7 +806,7 @@ public class StripeMonetizationDAO {
             } catch (APIManagementException e) {
                 String errorMessgae = "Failed to get ID for API : " + apiName;
                 log.error(errorMessgae);
-                throw new StripeMonetizationException(errorMessgae, e);
+                throw new ZarinpalMonetizationException(errorMessgae, e);
             }
             ps = conn.prepareStatement(sqlQuery);
             ps.setInt(1, applicationId);
@@ -820,7 +820,7 @@ public class StripeMonetizationDAO {
         } catch (SQLException e) {
             String errorMessage = "Failed to get billing engine Subscription info for API : " + apiName;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } finally {
             APIMgtDBUtil.closeAllConnections(ps, conn, result);
         }

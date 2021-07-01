@@ -19,21 +19,15 @@
 package org.wso2.apim.monetization.impl.workflow;
 
 import com.google.gson.Gson;
-import com.stripe.Stripe;
-import com.stripe.exception.StripeException;
-import com.stripe.model.Customer;
-import com.stripe.model.Subscription;
-import com.stripe.model.Token;
-import com.stripe.net.RequestOptions;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
-import org.wso2.apim.monetization.impl.StripeMonetizationConstants;
-import org.wso2.apim.monetization.impl.StripeMonetizationDAO;
-import org.wso2.apim.monetization.impl.StripeMonetizationException;
+import org.wso2.apim.monetization.impl.ZarinpalMonetizationConstants;
+import org.wso2.apim.monetization.impl.ZarinpalMonetizationDAO;
+import org.wso2.apim.monetization.impl.ZarinpalMonetizationException;
 import org.wso2.apim.monetization.impl.model.MonetizationPlatformCustomer;
 import org.wso2.apim.monetization.impl.model.MonetizationSharedCustomer;
 import org.wso2.carbon.apimgt.api.APIManagementException;
@@ -62,12 +56,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * worrkflow executor for stripe based subscription create action
+ * worrkflow executor for zarinpal based subscription create action
  */
-public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor {
+public class ZarinpalSubscriptionCreationWorkflowExecutor extends WorkflowExecutor {
 
-    private static final Log log = LogFactory.getLog(StripeSubscriptionCreationWorkflowExecutor.class);
-    StripeMonetizationDAO stripeMonetizationDAO = StripeMonetizationDAO.getInstance();
+    private static final Log log = LogFactory.getLog(ZarinpalSubscriptionCreationWorkflowExecutor.class);
+    ZarinpalMonetizationDAO zarinpalMonetizationDAO = ZarinpalMonetizationDAO.getInstance();
 
     @Override
     public String getWorkflowType() {
@@ -115,7 +109,7 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
 
         boolean isMonetizationEnabled = false;
         SubscriptionWorkflowDTO subWorkFlowDTO = null;
-        String stripePlatformAccountKey = null;
+        String zarinpalPlatformAccountKey = null;
         Subscriber subscriber = null;
         Customer customer = null;
         Customer sharedCustomerBE = null;
@@ -124,38 +118,38 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
         ApiMgtDAO apiMgtDAO = ApiMgtDAO.getInstance();
         subWorkFlowDTO = (SubscriptionWorkflowDTO) workflowDTO;
 
-        //read the platform account key of Stripe
-        Stripe.apiKey = getPlatformAccountKey(subWorkFlowDTO.getTenantId());
+        //read the platform account key of Zarinpal
+        Zarinpal.apiKey = getPlatformAccountKey(subWorkFlowDTO.getTenantId());
         String connectedAccountKey = StringUtils.EMPTY;
         Map<String, String> monetizationProperties = new Gson().fromJson(api.getMonetizationProperties().toString(),
                 HashMap.class);
         if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
             connectedAccountKey = monetizationProperties.get
-                    (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
+                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
             if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account stripe key was not found for API : "
+                String errorMessage = "Connected account zarinpal key was not found for API : "
                         + api.getId().getApiName();
                 log.error(errorMessage);
                 throw new WorkflowException(errorMessage);
             }
         } else {
-            String errorMessage = "Stripe key of the connected account is empty.";
+            String errorMessage = "Zarinpal key of the connected account is empty.";
             log.error(errorMessage);
             throw new WorkflowException(errorMessage);
         }
-        //needed to create artifacts in the stripe connected account
-        RequestOptions requestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
+        //needed to create artifacts in the zarinpal connected account
+        RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
         try {
             subscriber = apiMgtDAO.getSubscriber(subWorkFlowDTO.getSubscriber());
             // check whether the application is already registered as a customer under the particular
-            // APIprovider/Connected Account in Stripe
-            monetizationSharedCustomer = stripeMonetizationDAO.getSharedCustomer(subWorkFlowDTO.getApplicationId(),
+            // APIprovider/Connected Account in Zarinpal
+            monetizationSharedCustomer = zarinpalMonetizationDAO.getSharedCustomer(subWorkFlowDTO.getApplicationId(),
                     subWorkFlowDTO.getApiProvider(), subWorkFlowDTO.getTenantId());
             if (monetizationSharedCustomer.getSharedCustomerId() == null) {
                 // checks whether the subscriber is already registered as a customer Under the
-                // tenant/Platform account in Stripe
-                monetizationPlatformCustomer = stripeMonetizationDAO.getPlatformCustomer(subscriber.getId(),
+                // tenant/Platform account in Zarinpal
+                monetizationPlatformCustomer = zarinpalMonetizationDAO.getPlatformCustomer(subscriber.getId(),
                         subscriber.getTenantId());
                 if (monetizationPlatformCustomer.getCustomerId() == null) {
                     monetizationPlatformCustomer = createMonetizationPlatformCutomer(subscriber);
@@ -165,14 +159,14 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
             }
             //creating Subscriptions
             int apiId = ApiMgtDAO.getInstance().getAPIID(api.getId(), null);
-            String planId = stripeMonetizationDAO.getBillingEnginePlanIdForTier(apiId, subWorkFlowDTO.getTierName());
+            String planId = zarinpalMonetizationDAO.getBillingEnginePlanIdForTier(apiId, subWorkFlowDTO.getTierName());
             createMonetizedSubscriptions(planId, monetizationSharedCustomer, requestOptions, subWorkFlowDTO);
         } catch (APIManagementException e) {
             String errorMessage = "Could not monetize subscription for API : " + subWorkFlowDTO.getApiName()
                     + " by Application : " + subWorkFlowDTO.getApplicationName();
             log.error(errorMessage);
             throw new WorkflowException(errorMessage, e);
-        } catch (StripeMonetizationException e) {
+        } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Could not monetize subscription for API : " + subWorkFlowDTO.getApiName()
                     + " by Application " + subWorkFlowDTO.getApplicationName();
             log.error(errorMessage);
@@ -187,7 +181,7 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
 
         boolean isMonetizationEnabled = false;
         SubscriptionWorkflowDTO subWorkFlowDTO = null;
-        String stripePlatformAccountKey = null;
+        String zarinpalPlatformAccountKey = null;
         Subscriber subscriber = null;
         Customer customer = null;
         Customer sharedCustomerBE = null;
@@ -195,38 +189,38 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
         MonetizationSharedCustomer monetizationSharedCustomer;
         ApiMgtDAO apiMgtDAO = ApiMgtDAO.getInstance();
         subWorkFlowDTO = (SubscriptionWorkflowDTO) workflowDTO;
-        //read the platform account key of Stripe
-        Stripe.apiKey = getPlatformAccountKey(subWorkFlowDTO.getTenantId());
+        //read the platform account key of Zarinpal
+        Zarinpal.apiKey = getPlatformAccountKey(subWorkFlowDTO.getTenantId());
         String connectedAccountKey = StringUtils.EMPTY;
         Map<String, String> monetizationProperties = new Gson().fromJson(apiProduct.getMonetizationProperties().toString(),
                 HashMap.class);
         if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
             connectedAccountKey = monetizationProperties.get
-                    (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
+                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
             if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account stripe key was not found for : "
+                String errorMessage = "Connected account zarinpal key was not found for : "
                         + apiProduct.getId().getName();
                 log.error(errorMessage);
                 throw new WorkflowException(errorMessage);
             }
         } else {
-            String errorMessage = "Stripe key of the connected account is empty.";
+            String errorMessage = "Zarinpal key of the connected account is empty.";
             log.error(errorMessage);
             throw new WorkflowException(errorMessage);
         }
-        //needed to create artifacts in the stripe connected account
-        RequestOptions requestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
+        //needed to create artifacts in the zarinpal connected account
+        RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
         try {
             subscriber = apiMgtDAO.getSubscriber(subWorkFlowDTO.getSubscriber());
             // check whether the application is already registered as a customer under the particular
-            // APIprovider/Connected Account in Stripe
-            monetizationSharedCustomer = stripeMonetizationDAO.getSharedCustomer(subWorkFlowDTO.getApplicationId(),
+            // APIprovider/Connected Account in Zarinpal
+            monetizationSharedCustomer = zarinpalMonetizationDAO.getSharedCustomer(subWorkFlowDTO.getApplicationId(),
                     subWorkFlowDTO.getApiProvider(), subWorkFlowDTO.getTenantId());
             if (monetizationSharedCustomer.getSharedCustomerId() == null) {
                 // checks whether the subscriber is already registered as a customer Under the
-                // tenant/Platform account in Stripe
-                monetizationPlatformCustomer = stripeMonetizationDAO.getPlatformCustomer(subscriber.getId(),
+                // tenant/Platform account in Zarinpal
+                monetizationPlatformCustomer = zarinpalMonetizationDAO.getPlatformCustomer(subscriber.getId(),
                         subscriber.getTenantId());
                 if (monetizationPlatformCustomer.getCustomerId() == null) {
                     monetizationPlatformCustomer = createMonetizationPlatformCutomer(subscriber);
@@ -236,14 +230,14 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
             }
             //creating Subscriptions
             int apiId = ApiMgtDAO.getInstance().getAPIProductId(apiProduct.getId());
-            String planId = stripeMonetizationDAO.getBillingEnginePlanIdForTier(apiId, subWorkFlowDTO.getTierName());
+            String planId = zarinpalMonetizationDAO.getBillingEnginePlanIdForTier(apiId, subWorkFlowDTO.getTierName());
             createMonetizedSubscriptions(planId, monetizationSharedCustomer, requestOptions, subWorkFlowDTO);
         } catch (APIManagementException e) {
             String errorMessage = "Could not monetize subscription for : " + subWorkFlowDTO.getApiName()
                     + " by application : " + subWorkFlowDTO.getApplicationName();
             log.error(errorMessage);
             throw new WorkflowException(errorMessage, e);
-        } catch (StripeMonetizationException e) {
+        } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Could not monetize subscription for : " + subWorkFlowDTO.getApiName()
                     + " by application " + subWorkFlowDTO.getApplicationName();
             log.error(errorMessage);
@@ -253,15 +247,15 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
     }
 
     /**
-     * Returns the stripe key of the platform/tenant
+     * Returns the zarinpal key of the platform/tenant
      *
      * @param tenantId id of the tenant
-     * @return the stripe key of the platform/tenant
+     * @return the zarinpal key of the platform/tenant
      * @throws WorkflowException
      */
     private String getPlatformAccountKey(int tenantId) throws WorkflowException {
 
-        String stripePlatformAccountKey = null;
+        String zarinpalPlatformAccountKey = null;
         try {
             Registry configRegistry = ServiceReferenceHolder.getInstance().getRegistryService().getConfigSystemRegistry(
                     tenantId);
@@ -273,23 +267,23 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
                     String errorMessage = "Tenant configuration cannot be empty when configuring monetization.";
                     throw new WorkflowException(errorMessage);
                 }
-                //get the stripe key of patform account from tenant conf file
+                //get the zarinpal key of patform account from tenant conf file
                 JSONObject tenantConfig = (JSONObject) new JSONParser().parse(content);
                 JSONObject monetizationInfo = (JSONObject) tenantConfig.get(
-                        StripeMonetizationConstants.MONETIZATION_INFO);
-                stripePlatformAccountKey = monetizationInfo.get(
-                        StripeMonetizationConstants.BILLING_ENGINE_PLATFORM_ACCOUNT_KEY).toString();
+                        ZarinpalMonetizationConstants.MONETIZATION_INFO);
+                zarinpalPlatformAccountKey = monetizationInfo.get(
+                        ZarinpalMonetizationConstants.BILLING_ENGINE_PLATFORM_ACCOUNT_KEY).toString();
 
-                if (StringUtils.isBlank(stripePlatformAccountKey)) {
-                    throw new WorkflowException("stripePlatformAccountKey is empty!!!");
+                if (StringUtils.isBlank(zarinpalPlatformAccountKey)) {
+                    throw new WorkflowException("zarinpalPlatformAccountKey is empty!!!");
                 }
             }
         } catch (RegistryException ex) {
             throw new WorkflowException("Could not get all registry objects : ", ex);
         } catch (org.json.simple.parser.ParseException ex) {
-            throw new WorkflowException("Could not get Stripe Platform key : ", ex);
+            throw new WorkflowException("Could not get Zarinpal Platform key : ", ex);
         }
-        return stripePlatformAccountKey;
+        return zarinpalPlatformAccountKey;
     }
 
     /**
@@ -307,43 +301,43 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
                                                            SubscriptionWorkflowDTO subWorkFlowDTO)
             throws WorkflowException {
 
-        Customer stripeCustomer;
+        Customer zarinpalCustomer;
         MonetizationSharedCustomer monetizationSharedCustomer = new MonetizationSharedCustomer();
         Token token;
         try {
             Map<String, Object> params = new HashMap<String, Object>();
-            params.put(StripeMonetizationConstants.CUSTOMER, platformCustomer.getCustomerId());
+            params.put(ZarinpalMonetizationConstants.CUSTOMER, platformCustomer.getCustomerId());
             //creating a token using the platform customers source
             token = Token.create(params, requestOptions);
-        } catch (StripeException ex) {
-            String errorMsg = "Error when creating a stripe token for" + platformCustomer.getSubscriberName();
+        } catch (ZarinpalException ex) {
+            String errorMsg = "Error when creating a zarinpal token for" + platformCustomer.getSubscriberName();
             log.error(errorMsg);
             throw new WorkflowException(errorMsg, ex);
         }
         Map<String, Object> sharedCustomerParams = new HashMap<>();
         //if the email id of subscriber is empty, a customer object in billing engine will be created without email id
         if (!StringUtils.isEmpty(email)) {
-            sharedCustomerParams.put(StripeMonetizationConstants.CUSTOMER_EMAIL, email);
+            sharedCustomerParams.put(ZarinpalMonetizationConstants.CUSTOMER_EMAIL, email);
         }
         try {
-            sharedCustomerParams.put(StripeMonetizationConstants.CUSTOMER_DESCRIPTION, "Shared Customer for "
-                    + subWorkFlowDTO.getApplicationName() + StripeMonetizationConstants.FILE_SEPERATOR
+            sharedCustomerParams.put(ZarinpalMonetizationConstants.CUSTOMER_DESCRIPTION, "Shared Customer for "
+                    + subWorkFlowDTO.getApplicationName() + ZarinpalMonetizationConstants.FILE_SEPERATOR
                     + subWorkFlowDTO.getSubscriber());
-            sharedCustomerParams.put(StripeMonetizationConstants.CUSTOMER_SOURCE, token.getId());
-            stripeCustomer = Customer.create(sharedCustomerParams, requestOptions);
+            sharedCustomerParams.put(ZarinpalMonetizationConstants.CUSTOMER_SOURCE, token.getId());
+            zarinpalCustomer = Customer.create(sharedCustomerParams, requestOptions);
             try {
                 monetizationSharedCustomer.setApplicationId(subWorkFlowDTO.getApplicationId());
                 monetizationSharedCustomer.setApiProvider(subWorkFlowDTO.getApiProvider());
                 monetizationSharedCustomer.setTenantId(subWorkFlowDTO.getTenantId());
-                monetizationSharedCustomer.setSharedCustomerId(stripeCustomer.getId());
+                monetizationSharedCustomer.setSharedCustomerId(zarinpalCustomer.getId());
                 monetizationSharedCustomer.setParentCustomerId(platformCustomer.getId());
                 //returns the ID of the inserted record
-                int id = stripeMonetizationDAO.addBESharedCustomer(monetizationSharedCustomer);
+                int id = zarinpalMonetizationDAO.addBESharedCustomer(monetizationSharedCustomer);
                 monetizationSharedCustomer.setId(id);
-            } catch (StripeMonetizationException ex) {
-                //deleting the created customer in stripe if it fails to create the DB record
-                stripeCustomer.delete(requestOptions);
-                String errorMsg = "Error when inserting Stripe shared customer details of Application : "
+            } catch (ZarinpalMonetizationException ex) {
+                //deleting the created customer in zarinpal if it fails to create the DB record
+                zarinpalCustomer.delete(requestOptions);
+                String errorMsg = "Error when inserting Zarinpal shared customer details of Application : "
                         + subWorkFlowDTO.getApplicationName() + "to database";
                 log.error(errorMsg, ex);
                 throw new WorkflowException(errorMsg, ex);
@@ -351,11 +345,11 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
             if (log.isDebugEnabled()) {
                 String msg = "A customer for Application " + subWorkFlowDTO.getApplicationName()
                         + " is created under the " + subWorkFlowDTO.getApiProvider()
-                        + "'s connected account in Stripe";
+                        + "'s connected account in Zarinpal";
                 log.debug(msg);
             }
-        } catch (StripeException ex) {
-            String errorMsg = "Error while creating a shared customer in Stripe for Application : "
+        } catch (ZarinpalException ex) {
+            String errorMsg = "Error while creating a shared customer in Zarinpal for Application : "
                     + subWorkFlowDTO.getApplicationName();
             log.error(errorMsg);
             throw new WorkflowException(errorMsg, ex);
@@ -366,9 +360,9 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
     /**
      * The method creates a subscription in Billing Engine
      *
-     * @param planId         plan Id of the Stripe monetization plan
-     * @param sharedCustomer contains info about the customer created in the provider account of Stripe
-     * @param requestOptions contains connected account credential needed for Stripe transactions
+     * @param planId         plan Id of the Zarinpal monetization plan
+     * @param sharedCustomer contains info about the customer created in the provider account of Zarinpal
+     * @param requestOptions contains connected account credential needed for Zarinpal transactions
      * @param subWorkFlowDTO The WorkflowDTO which contains workflow contextual information related to the workflow
      * @throws WorkflowException
      */
@@ -376,46 +370,46 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
                                              RequestOptions requestOptions, SubscriptionWorkflowDTO subWorkFlowDTO)
             throws WorkflowException {
 
-        StripeMonetizationDAO stripeMonetizationDAO = StripeMonetizationDAO.getInstance();
+        ZarinpalMonetizationDAO zarinpalMonetizationDAO = ZarinpalMonetizationDAO.getInstance();
         APIIdentifier identifier = new APIIdentifier(subWorkFlowDTO.getApiProvider(), subWorkFlowDTO.getApiName(),
                 subWorkFlowDTO.getApiVersion());
         Subscription subscription = null;
         try {
             Map<String, Object> item = new HashMap<String, Object>();
-            item.put(StripeMonetizationConstants.PLAN, planId);
+            item.put(ZarinpalMonetizationConstants.PLAN, planId);
             Map<String, Object> items = new HashMap<String, Object>();
             //adding a subscription item, with an attached plan.
             items.put("0", item);
             Map<String, Object> subParams = new HashMap<String, Object>();
-            subParams.put(StripeMonetizationConstants.CUSTOMER, sharedCustomer.getSharedCustomerId());
-            subParams.put(StripeMonetizationConstants.ITEMS, items);
+            subParams.put(ZarinpalMonetizationConstants.CUSTOMER, sharedCustomer.getSharedCustomerId());
+            subParams.put(ZarinpalMonetizationConstants.ITEMS, items);
             try {
-                //create a subscritpion in stripe under the API Providers Connected Account
+                //create a subscritpion in zarinpal under the API Providers Connected Account
                 subscription = Subscription.create(subParams, requestOptions);
-            } catch (StripeException ex) {
-                String errorMsg = "Error when adding a subscription in Stripe for Application : " +
+            } catch (ZarinpalException ex) {
+                String errorMsg = "Error when adding a subscription in Zarinpal for Application : " +
                         subWorkFlowDTO.getApplicationName();
                 log.error(errorMsg);
                 throw new WorkflowException(errorMsg, ex);
             }
             try {
-                stripeMonetizationDAO.addBESubscription(identifier, subWorkFlowDTO.getApplicationId(),
+                zarinpalMonetizationDAO.addBESubscription(identifier, subWorkFlowDTO.getApplicationId(),
                         subWorkFlowDTO.getTenantId(), sharedCustomer.getId(), subscription.getId());
-            } catch (StripeMonetizationException e) {
-                //delete the subscription in Stripe, if the entry to database fails in API Manager
+            } catch (ZarinpalMonetizationException e) {
+                //delete the subscription in Zarinpal, if the entry to database fails in API Manager
                 subscription.cancel((Map<String, Object>) null, requestOptions);
-                String errorMsg = "Error when adding stripe subscription details of Application "
+                String errorMsg = "Error when adding zarinpal subscription details of Application "
                         + subWorkFlowDTO.getApplicationName() + " to Database";
                 log.error(errorMsg);
                 throw new WorkflowException(errorMsg, e);
             }
             if (log.isDebugEnabled()) {
-                String msg = "Stripe subscription for " + subWorkFlowDTO.getApplicationName() + " is created for"
+                String msg = "Zarinpal subscription for " + subWorkFlowDTO.getApplicationName() + " is created for"
                         + subWorkFlowDTO.getApiName() + " API";
                 log.debug(msg);
             }
-        } catch (StripeException ex) {
-            String errorMessage = "Failed to create subscription in Stripe for API : " + subWorkFlowDTO.getApiName()
+        } catch (ZarinpalException ex) {
+            String errorMessage = "Failed to create subscription in Zarinpal for API : " + subWorkFlowDTO.getApiName()
                     + "by Application : " + subWorkFlowDTO.getApplicationName();
             log.error(errorMessage);
             throw new WorkflowException(errorMessage, ex);
@@ -426,7 +420,7 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
      * The method creates a Platform Customer in Billing Engine
      *
      * @param subscriber object which contains info about the subscriber
-     * @return StripeCustomer object which contains info about the customer created in platform account of stripe
+     * @return ZarinpalCustomer object which contains info about the customer created in platform account of zarinpal
      * @throws WorkflowException
      */
     public MonetizationPlatformCustomer createMonetizationPlatformCutomer(Subscriber subscriber)
@@ -438,31 +432,31 @@ public class StripeSubscriptionCreationWorkflowExecutor extends WorkflowExecutor
             Map<String, Object> customerParams = new HashMap<String, Object>();
             //Customer object in billing engine will be created without the email id
             if (!StringUtils.isEmpty(subscriber.getEmail())) {
-                customerParams.put(StripeMonetizationConstants.CUSTOMER_EMAIL, subscriber.getEmail());
+                customerParams.put(ZarinpalMonetizationConstants.CUSTOMER_EMAIL, subscriber.getEmail());
             }
-            customerParams.put(StripeMonetizationConstants.CUSTOMER_DESCRIPTION, "Customer for "
+            customerParams.put(ZarinpalMonetizationConstants.CUSTOMER_DESCRIPTION, "Customer for "
                     + subscriber.getName());
-            customerParams.put(StripeMonetizationConstants.CUSTOMER_SOURCE, StripeMonetizationConstants.DEFAULT_TOKEN);
+            customerParams.put(ZarinpalMonetizationConstants.CUSTOMER_SOURCE, ZarinpalMonetizationConstants.DEFAULT_TOKEN);
             //create a customer for subscriber in the platform account
             customer = Customer.create(customerParams);
             monetizationPlatformCustomer.setCustomerId(customer.getId());
             try {
                 //returns the id of the inserted record
-                int id = stripeMonetizationDAO.addBEPlatformCustomer(subscriber.getId(), subscriber.getTenantId(),
+                int id = zarinpalMonetizationDAO.addBEPlatformCustomer(subscriber.getId(), subscriber.getTenantId(),
                         customer.getId());
                 monetizationPlatformCustomer.setId(id);
-            } catch (StripeMonetizationException e) {
+            } catch (ZarinpalMonetizationException e) {
                 if (customer != null) {
-                    // deletes the customer if the customer is created in Stripe and failed to update in DB
+                    // deletes the customer if the customer is created in Zarinpal and failed to update in DB
                     customer.delete();
                 }
-                String errorMsg = "Error when inserting stripe customer details of " + subscriber.getName()
+                String errorMsg = "Error when inserting zarinpal customer details of " + subscriber.getName()
                         + " to Database";
                 log.error(errorMsg);
                 throw new WorkflowException(errorMsg, e);
             }
-        } catch (StripeException ex) {
-            String errorMsg = "Error while creating a customer in Stripe for " + subscriber.getName();
+        } catch (ZarinpalException ex) {
+            String errorMsg = "Error while creating a customer in Zarinpal for " + subscriber.getName();
             log.error(errorMsg);
             throw new WorkflowException(errorMsg, ex);
         }

@@ -17,19 +17,15 @@
 package org.wso2.apim.monetization.impl.workflow;
 
 import com.google.gson.Gson;
-import com.stripe.Stripe;
-import com.stripe.exception.StripeException;
-import com.stripe.model.Subscription;
-import com.stripe.net.RequestOptions;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
-import org.wso2.apim.monetization.impl.StripeMonetizationConstants;
-import org.wso2.apim.monetization.impl.StripeMonetizationDAO;
-import org.wso2.apim.monetization.impl.StripeMonetizationException;
+import org.wso2.apim.monetization.impl.ZarinpalMonetizationConstants;
+import org.wso2.apim.monetization.impl.ZarinpalMonetizationDAO;
+import org.wso2.apim.monetization.impl.ZarinpalMonetizationException;
 import org.wso2.apim.monetization.impl.model.MonetizedSubscription;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.WorkflowResponse;
@@ -56,11 +52,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * worrkflow executor for stripe based subscription delete action
+ * worrkflow executor for zarinpal based subscription delete action
  */
-public class StripeSubscriptionDeletionWorkflowExecutor extends WorkflowExecutor {
+public class ZarinpalSubscriptionDeletionWorkflowExecutor extends WorkflowExecutor {
 
-    private static final Log log = LogFactory.getLog(StripeSubscriptionDeletionWorkflowExecutor.class);
+    private static final Log log = LogFactory.getLog(ZarinpalSubscriptionDeletionWorkflowExecutor.class);
 
     @Override
     public String getWorkflowType() {
@@ -102,37 +98,37 @@ public class StripeSubscriptionDeletionWorkflowExecutor extends WorkflowExecutor
 
         SubscriptionWorkflowDTO subWorkflowDTO;
         MonetizedSubscription monetizedSubscription;
-        StripeMonetizationDAO stripeMonetizationDAO = new StripeMonetizationDAO();
+        ZarinpalMonetizationDAO zarinpalMonetizationDAO = new ZarinpalMonetizationDAO();
         subWorkflowDTO = (SubscriptionWorkflowDTO) workflowDTO;
-        //read the platform key of Stripe
-        Stripe.apiKey = getPlatformAccountKey(subWorkflowDTO.getTenantId());
+        //read the platform key of Zarinpal
+        Zarinpal.apiKey = getPlatformAccountKey(subWorkflowDTO.getTenantId());
         String connectedAccountKey = StringUtils.EMPTY;
         Map<String, String> monetizationProperties = new Gson().fromJson(api.getMonetizationProperties().toString(),
                 HashMap.class);
         if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
             // get the key of the connected account
             connectedAccountKey = monetizationProperties.get
-                    (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
+                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
             if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account stripe key was not found for : "
+                String errorMessage = "Connected account zarinpal key was not found for : "
                         + api.getId().getApiName();
                 log.error(errorMessage);
                 throw new WorkflowException(errorMessage);
             }
         } else {
-            String errorMessage = "Stripe key of the connected account is empty.";
+            String errorMessage = "Zarinpal key of the connected account is empty.";
             log.error(errorMessage);
             throw new WorkflowException(errorMessage);
         }
         //needed to add,remove artifacts in connected account
-        RequestOptions requestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
+        RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
         try {
-            //get the stripe subscription id
-            monetizedSubscription = stripeMonetizationDAO.getMonetizedSubscription(subWorkflowDTO.getApiName(),
+            //get the zarinpal subscription id
+            monetizedSubscription = zarinpalMonetizationDAO.getMonetizedSubscription(subWorkflowDTO.getApiName(),
                     subWorkflowDTO.getApiVersion(), subWorkflowDTO.getApiProvider(), subWorkflowDTO.getApplicationId(),
                     subWorkflowDTO.getTenantDomain());
-        } catch (StripeMonetizationException ex) {
+        } catch (ZarinpalMonetizationException ex) {
             String errorMessage = "Could not retrieve monetized subscription info for : "
                     + subWorkflowDTO.getApplicationName() + " by Application : " + subWorkflowDTO.getApplicationName();
             throw new WorkflowException(errorMessage, ex);
@@ -143,22 +139,22 @@ public class StripeSubscriptionDeletionWorkflowExecutor extends WorkflowExecutor
                         requestOptions);
                 Map<String, Object> params = new HashMap<>();
                 //canceled subscription will be invoiced immediately
-                params.put(StripeMonetizationConstants.INVOICE_NOW, true);
+                params.put(ZarinpalMonetizationConstants.INVOICE_NOW, true);
                 subscription = subscription.cancel(params, requestOptions);
-                if (StringUtils.equals(subscription.getStatus(), StripeMonetizationConstants.CANCELED)) {
-                    stripeMonetizationDAO.removeMonetizedSubscription(monetizedSubscription.getId());
+                if (StringUtils.equals(subscription.getStatus(), ZarinpalMonetizationConstants.CANCELED)) {
+                    zarinpalMonetizationDAO.removeMonetizedSubscription(monetizedSubscription.getId());
                 }
                 if (log.isDebugEnabled()) {
                     String msg = "Monetized subscriprion for : " + subWorkflowDTO.getApiName()
                             + " by Application : " + subWorkflowDTO.getApplicationName() + " is removed successfully ";
                     log.debug(msg);
                 }
-            } catch (StripeException ex) {
+            } catch (ZarinpalException ex) {
                 String errorMessage = "Failed to remove subcription in billing engine for : "
                         + subWorkflowDTO.getApiName() + " by Application : " + subWorkflowDTO.getApplicationName();
                 log.error(errorMessage);
                 throw new WorkflowException(errorMessage, ex);
-            } catch (StripeMonetizationException ex) {
+            } catch (ZarinpalMonetizationException ex) {
                 String errorMessage = "Failed to remove monetization subcription info from DB of : "
                         + subWorkflowDTO.getApiName() + " by Application : " + subWorkflowDTO.getApplicationName();
                 log.error(errorMessage);
@@ -174,36 +170,36 @@ public class StripeSubscriptionDeletionWorkflowExecutor extends WorkflowExecutor
 
         SubscriptionWorkflowDTO subWorkflowDTO;
         MonetizedSubscription monetizedSubscription;
-        StripeMonetizationDAO stripeMonetizationDAO = new StripeMonetizationDAO();
+        ZarinpalMonetizationDAO zarinpalMonetizationDAO = new ZarinpalMonetizationDAO();
         subWorkflowDTO = (SubscriptionWorkflowDTO) workflowDTO;
-        //read the platform key of Stripe
-        Stripe.apiKey = getPlatformAccountKey(subWorkflowDTO.getTenantId());
+        //read the platform key of Zarinpal
+        Zarinpal.apiKey = getPlatformAccountKey(subWorkflowDTO.getTenantId());
         String connectedAccountKey = StringUtils.EMPTY;
         Map<String, String> monetizationProperties = new Gson().fromJson(apiProduct.getMonetizationProperties().toString(),
                 HashMap.class);
         if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
             // get the key of the connected account
             connectedAccountKey = monetizationProperties.get
-                    (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
+                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
             if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account stripe key was not found for : " + apiProduct.getId().getName();
+                String errorMessage = "Connected account zarinpal key was not found for : " + apiProduct.getId().getName();
                 log.error(errorMessage);
                 throw new WorkflowException(errorMessage);
             }
         } else {
-            String errorMessage = "Stripe key of the connected account is empty.";
+            String errorMessage = "Zarinpal key of the connected account is empty.";
             log.error(errorMessage);
             throw new WorkflowException(errorMessage);
         }
         //needed to add,remove artifacts in connected account
-        RequestOptions requestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
+        RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
         try {
-            //get the stripe subscription id
-            monetizedSubscription = stripeMonetizationDAO.getMonetizedSubscription(subWorkflowDTO.getApiName(),
+            //get the zarinpal subscription id
+            monetizedSubscription = zarinpalMonetizationDAO.getMonetizedSubscription(subWorkflowDTO.getApiName(),
                     subWorkflowDTO.getApiVersion(), subWorkflowDTO.getApiProvider(), subWorkflowDTO.getApplicationId(),
                     subWorkflowDTO.getTenantDomain());
-        } catch (StripeMonetizationException ex) {
+        } catch (ZarinpalMonetizationException ex) {
             String errorMessage = "Could not retrieve monetized subscription info for : "
                     + subWorkflowDTO.getApplicationName() + " by application : " + subWorkflowDTO.getApplicationName();
             throw new WorkflowException(errorMessage, ex);
@@ -214,22 +210,22 @@ public class StripeSubscriptionDeletionWorkflowExecutor extends WorkflowExecutor
                         requestOptions);
                 Map<String, Object> params = new HashMap<>();
                 //canceled subscription will be invoiced immediately
-                params.put(StripeMonetizationConstants.INVOICE_NOW, true);
+                params.put(ZarinpalMonetizationConstants.INVOICE_NOW, true);
                 subscription = subscription.cancel(params, requestOptions);
-                if (StringUtils.equals(subscription.getStatus(), StripeMonetizationConstants.CANCELED)) {
-                    stripeMonetizationDAO.removeMonetizedSubscription(monetizedSubscription.getId());
+                if (StringUtils.equals(subscription.getStatus(), ZarinpalMonetizationConstants.CANCELED)) {
+                    zarinpalMonetizationDAO.removeMonetizedSubscription(monetizedSubscription.getId());
                 }
                 if (log.isDebugEnabled()) {
                     String msg = "Monetized subscriprion for : " + subWorkflowDTO.getApiName()
                             + " by application : " + subWorkflowDTO.getApplicationName() + " is removed successfully ";
                     log.debug(msg);
                 }
-            } catch (StripeException ex) {
+            } catch (ZarinpalException ex) {
                 String errorMessage = "Failed to remove subcription in billing engine for : "
                         + subWorkflowDTO.getApiName() + " by Application : " + subWorkflowDTO.getApplicationName();
                 log.error(errorMessage);
                 throw new WorkflowException(errorMessage, ex);
-            } catch (StripeMonetizationException ex) {
+            } catch (ZarinpalMonetizationException ex) {
                 String errorMessage = "Failed to remove monetization subcription info from DB of : "
                         + subWorkflowDTO.getApiName() + " by Application : " + subWorkflowDTO.getApplicationName();
                 log.error(errorMessage);
@@ -240,15 +236,15 @@ public class StripeSubscriptionDeletionWorkflowExecutor extends WorkflowExecutor
     }
 
     /**
-     * Returns the stripe key of the platform/tenant
+     * Returns the zarinpal key of the platform/tenant
      *
      * @param tenantId id of the tenant
-     * @return the stripe key of the platform/tenant
+     * @return the zarinpal key of the platform/tenant
      * @throws WorkflowException
      */
     private String getPlatformAccountKey(int tenantId) throws WorkflowException {
 
-        String stripePlatformAccountKey = null;
+        String zarinpalPlatformAccountKey = null;
         try {
             Registry configRegistry = ServiceReferenceHolder.getInstance().getRegistryService().getConfigSystemRegistry(
                     tenantId);
@@ -260,23 +256,23 @@ public class StripeSubscriptionDeletionWorkflowExecutor extends WorkflowExecutor
                     String errorMessage = "Tenant configuration cannot be empty when configuring monetization.";
                     throw new WorkflowException(errorMessage);
                 }
-                //get the stripe key of patform account from tenant conf file
+                //get the zarinpal key of patform account from tenant conf file
                 JSONObject tenantConfig = (JSONObject) new JSONParser().parse(content);
                 JSONObject monetizationInfo = (JSONObject) tenantConfig.get(
-                        StripeMonetizationConstants.MONETIZATION_INFO);
-                stripePlatformAccountKey = monetizationInfo.get(
-                        StripeMonetizationConstants.BILLING_ENGINE_PLATFORM_ACCOUNT_KEY).toString();
+                        ZarinpalMonetizationConstants.MONETIZATION_INFO);
+                zarinpalPlatformAccountKey = monetizationInfo.get(
+                        ZarinpalMonetizationConstants.BILLING_ENGINE_PLATFORM_ACCOUNT_KEY).toString();
 
-                if (StringUtils.isBlank(stripePlatformAccountKey)) {
-                    throw new WorkflowException("stripePlatformAccountKey is empty!!!");
+                if (StringUtils.isBlank(zarinpalPlatformAccountKey)) {
+                    throw new WorkflowException("zarinpalPlatformAccountKey is empty!!!");
                 }
             }
         } catch (RegistryException ex) {
             throw new WorkflowException("Could not get all registry objects : ", ex);
         } catch (org.json.simple.parser.ParseException ex) {
-            throw new WorkflowException("Could not get Stripe Platform key : ", ex);
+            throw new WorkflowException("Could not get Zarinpal Platform key : ", ex);
         }
-        return stripePlatformAccountKey;
+        return zarinpalPlatformAccountKey;
     }
 
     /**

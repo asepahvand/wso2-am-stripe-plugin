@@ -17,15 +17,6 @@
 package org.wso2.apim.monetization.impl;
 
 import com.google.gson.Gson;
-import com.stripe.Stripe;
-import com.stripe.exception.StripeException;
-import com.stripe.model.Invoice;
-import com.stripe.model.Plan;
-import com.stripe.model.Product;
-import com.stripe.model.Subscription;
-import com.stripe.model.SubscriptionItem;
-import com.stripe.model.UsageRecord;
-import com.stripe.net.RequestOptions;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -59,7 +50,6 @@ import org.wso2.carbon.registry.core.Registry;
 import org.wso2.carbon.registry.core.Resource;
 import org.wso2.carbon.registry.core.exceptions.RegistryException;
 import org.wso2.carbon.user.api.UserStoreException;
-import org.wso2.carbon.utils.multitenancy.MultitenantUtils;
 
 import java.nio.charset.Charset;
 import java.sql.Timestamp;
@@ -72,12 +62,12 @@ import java.util.Map;
 import java.util.TimeZone;
 
 /**
- * This class is used to implement stripe based monetization
+ * This class is used to implement zarinpal based monetization
  */
-public class StripeMonetizationImpl implements Monetization {
+public class ZarinpalMonetizationImpl implements Monetization {
 
-    private static final Log log = LogFactory.getLog(StripeMonetizationImpl.class);
-    private StripeMonetizationDAO stripeMonetizationDAO = StripeMonetizationDAO.getInstance();
+    private static final Log log = LogFactory.getLog(ZarinpalMonetizationImpl.class);
+    private ZarinpalMonetizationDAO zarinpalMonetizationDAO = ZarinpalMonetizationDAO.getInstance();
 
     /**
      * Create billing plan for a policy
@@ -90,9 +80,9 @@ public class StripeMonetizationImpl implements Monetization {
 
         try {
             //read tenant conf and get platform account key
-            Stripe.apiKey = getStripePlatformAccountKey(subscriptionPolicy.getTenantDomain());
-        } catch (StripeMonetizationException e) {
-            String errorMessage = "Failed to get Stripe platform account key for tenant :  " +
+            Zarinpal.apiKey = getZarinpalPlatformAccountKey(subscriptionPolicy.getTenantDomain());
+        } catch (ZarinpalMonetizationException e) {
+            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
                     subscriptionPolicy.getTenantDomain();
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -100,7 +90,7 @@ public class StripeMonetizationImpl implements Monetization {
         Map<String, Object> productParams = new HashMap<String, Object>();
         productParams.put(APIConstants.POLICY_NAME_ELEM, subscriptionPolicy.getTenantDomain() +
                 "-" + subscriptionPolicy.getPolicyName());
-        productParams.put(APIConstants.TYPE, StripeMonetizationConstants.SERVICE_TYPE);
+        productParams.put(APIConstants.TYPE, ZarinpalMonetizationConstants.SERVICE_TYPE);
         Timestamp timestamp = new Timestamp(new Date().getTime());
         String productCreationIdempotencyKey = subscriptionPolicy.getTenantDomain() + timestamp.toString();
         RequestOptions productRequestOptions = RequestOptions.builder().
@@ -109,7 +99,7 @@ public class StripeMonetizationImpl implements Monetization {
             Product product = Product.create(productParams, productRequestOptions);
             String productId = product.getId();
             if (StringUtils.isBlank(productId)) {
-                String errorMessage = "Failed to create stripe product for tenant : " +
+                String errorMessage = "Failed to create zarinpal product for tenant : " +
                         subscriptionPolicy.getTenantDomain();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage);
@@ -117,32 +107,32 @@ public class StripeMonetizationImpl implements Monetization {
             Map<String, Object> planParams = new HashMap<String, Object>();
             String currencyType = subscriptionPolicy.getMonetizationPlanProperties().
                     get(APIConstants.Monetization.CURRENCY).toLowerCase();
-            planParams.put(StripeMonetizationConstants.CURRENCY, currencyType);
-            planParams.put(StripeMonetizationConstants.PRODUCT, productId);
-            planParams.put(StripeMonetizationConstants.PRODUCT_NICKNAME, subscriptionPolicy.getPolicyName());
-            planParams.put(StripeMonetizationConstants.INTERVAL,
+            planParams.put(ZarinpalMonetizationConstants.CURRENCY, currencyType);
+            planParams.put(ZarinpalMonetizationConstants.PRODUCT, productId);
+            planParams.put(ZarinpalMonetizationConstants.PRODUCT_NICKNAME, subscriptionPolicy.getPolicyName());
+            planParams.put(ZarinpalMonetizationConstants.INTERVAL,
                     subscriptionPolicy.getMonetizationPlanProperties().get(APIConstants.Monetization.BILLING_CYCLE));
             if (APIConstants.Monetization.FIXED_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
                 float amount = Float.parseFloat(subscriptionPolicy.getMonetizationPlanProperties().
                         get(APIConstants.Monetization.FIXED_PRICE));
-                //need to multiply the input for "amount" by 100 for stripe (because it divides the value by 100)
-                //also, since stripe supports only integers, convert the amount to an int before creating the plan
-                planParams.put(StripeMonetizationConstants.AMOUNT, (int) (amount * 100));
-                planParams.put(StripeMonetizationConstants.USAGE_TYPE, StripeMonetizationConstants.LICENSED_USAGE);
+                //need to multiply the input for "amount" by 100 for zarinpal (because it divides the value by 100)
+                //also, since zarinpal supports only integers, convert the amount to an int before creating the plan
+                planParams.put(ZarinpalMonetizationConstants.AMOUNT, (int) (amount * 100));
+                planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, ZarinpalMonetizationConstants.LICENSED_USAGE);
             }
-            if (StripeMonetizationConstants.DYNAMIC_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
+            if (ZarinpalMonetizationConstants.DYNAMIC_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
                 float amount = Float.parseFloat(subscriptionPolicy.getMonetizationPlanProperties().
                         get(APIConstants.Monetization.PRICE_PER_REQUEST));
-                //need to multiply the input for "amount" by 100 for stripe (because it divides the value by 100)
-                //also, since stripe supports only integers, convert the amount to an int before creating the plan
-                planParams.put(StripeMonetizationConstants.AMOUNT, (int) (amount * 100));
-                planParams.put(StripeMonetizationConstants.USAGE_TYPE, StripeMonetizationConstants.METERED_USAGE);
+                //need to multiply the input for "amount" by 100 for zarinpal (because it divides the value by 100)
+                //also, since zarinpal supports only integers, convert the amount to an int before creating the plan
+                planParams.put(ZarinpalMonetizationConstants.AMOUNT, (int) (amount * 100));
+                planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, ZarinpalMonetizationConstants.METERED_USAGE);
             }
             RequestOptions planRequestOptions = RequestOptions.builder().
                     setIdempotencyKey(subscriptionPolicy.getUUID()).build();
             Plan plan = Plan.create(planParams, planRequestOptions);
             String createdPlanId = plan.getId();
-            //put the newly created stripe plans and tiers into a map (to add data to the database)
+            //put the newly created zarinpal plans and tiers into a map (to add data to the database)
             if (StringUtils.isBlank(createdPlanId)) {
                 String errorMessage = "Failed to create plan for tier : " + subscriptionPolicy.getPolicyName() +
                         " in " + subscriptionPolicy.getTenantDomain();
@@ -150,14 +140,14 @@ public class StripeMonetizationImpl implements Monetization {
                 throw new MonetizationException(errorMessage);
             }
             //add database record
-            stripeMonetizationDAO.addMonetizationPlanData(subscriptionPolicy, productId, createdPlanId);
+            zarinpalMonetizationDAO.addMonetizationPlanData(subscriptionPolicy, productId, createdPlanId);
             return true;
-        } catch (StripeException e) {
+        } catch (ZarinpalException e) {
             String errorMessage = "Failed to create monetization plan for : " + subscriptionPolicy.getPolicyName() +
-                    " in stripe.";
+                    " in zarinpal.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
-        } catch (StripeMonetizationException e) {
+        } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Failed to create monetization plan for : " + subscriptionPolicy.getPolicyName() +
                     " in the database.";
             //throw MonetizationException as it will be logged and handled by the caller
@@ -176,9 +166,9 @@ public class StripeMonetizationImpl implements Monetization {
 
         Map<String, String> planData = null;
         try {
-            planData = stripeMonetizationDAO.getPlanData(subscriptionPolicy);
-        } catch (StripeMonetizationException e) {
-            String errorMessage = "Failed to get stripe plan data for policy : " + subscriptionPolicy.getPolicyName() +
+            planData = zarinpalMonetizationDAO.getPlanData(subscriptionPolicy);
+        } catch (ZarinpalMonetizationException e) {
+            String errorMessage = "Failed to get zarinpal plan data for policy : " + subscriptionPolicy.getPolicyName() +
                     " when updating billing plan.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -189,24 +179,24 @@ public class StripeMonetizationImpl implements Monetization {
         String updatedPlanId = null;
         try {
             //read tenant-conf.json and get platform account key
-            Stripe.apiKey = getStripePlatformAccountKey(subscriptionPolicy.getTenantDomain());
-        } catch (StripeMonetizationException e) {
-            String errorMessage = "Failed to get Stripe platform account key for tenant :  " +
+            Zarinpal.apiKey = getZarinpalPlatformAccountKey(subscriptionPolicy.getTenantDomain());
+        } catch (ZarinpalMonetizationException e) {
+            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
                     subscriptionPolicy.getTenantDomain() + " when updating billing plan.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
         }
         if (MapUtils.isNotEmpty(planData)) {
             //product and plan exists for the older plan, so get those values and proceed
-            oldProductId = planData.get(StripeMonetizationConstants.PRODUCT_ID);
-            oldPlanId = planData.get(StripeMonetizationConstants.PLAN_ID);
+            oldProductId = planData.get(ZarinpalMonetizationConstants.PRODUCT_ID);
+            oldPlanId = planData.get(ZarinpalMonetizationConstants.PLAN_ID);
         } else {
             //this means updating the monetization plan of tier from a free to commercial.
             //since there is no plan (for old - free tier), we should create a product and plan for the updated tier
             Map<String, Object> productParams = new HashMap<String, Object>();
             productParams.put(APIConstants.POLICY_NAME_ELEM,
                     subscriptionPolicy.getTenantDomain() + "-" + subscriptionPolicy.getPolicyName());
-            productParams.put(APIConstants.TYPE, StripeMonetizationConstants.SERVICE_TYPE);
+            productParams.put(APIConstants.TYPE, ZarinpalMonetizationConstants.SERVICE_TYPE);
             Timestamp timestamp = new Timestamp(new Date().getTime());
             String productCreationIdempotencyKey = subscriptionPolicy.getTenantDomain() + timestamp.toString();
             RequestOptions productRequestOptions = RequestOptions.builder().
@@ -215,13 +205,13 @@ public class StripeMonetizationImpl implements Monetization {
                 Product product = Product.create(productParams, productRequestOptions);
                 newProductId = product.getId();
                 if (StringUtils.isBlank(newProductId)) {
-                    String errorMessage = "No stripe product was created for tenant (when updating policy) : " +
+                    String errorMessage = "No zarinpal product was created for tenant (when updating policy) : " +
                             subscriptionPolicy.getTenantDomain();
                     //throw MonetizationException as it will be logged and handled by the caller
                     throw new MonetizationException(errorMessage);
                 }
-            } catch (StripeException e) {
-                String errorMessage = "Failed to create stripe product for tenant (when updating policy) : " +
+            } catch (ZarinpalException e) {
+                String errorMessage = "Failed to create zarinpal product for tenant (when updating policy) : " +
                         subscriptionPolicy.getTenantDomain();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage, e);
@@ -231,7 +221,7 @@ public class StripeMonetizationImpl implements Monetization {
         if (StringUtils.isNotBlank(oldPlanId)) {
             try {
                 Plan.retrieve(oldPlanId).delete();
-            } catch (StripeException e) {
+            } catch (ZarinpalException e) {
                 String errorMessage = "Failed to delete old plan for policy : " + subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage, e);
@@ -242,38 +232,38 @@ public class StripeMonetizationImpl implements Monetization {
             Map<String, Object> planParams = new HashMap<String, Object>();
             String currencyType = subscriptionPolicy.getMonetizationPlanProperties().
                     get(APIConstants.Monetization.CURRENCY).toLowerCase();
-            planParams.put(StripeMonetizationConstants.CURRENCY, currencyType);
+            planParams.put(ZarinpalMonetizationConstants.CURRENCY, currencyType);
             if (StringUtils.isNotBlank(oldProductId)) {
-                planParams.put(StripeMonetizationConstants.PRODUCT, oldProductId);
+                planParams.put(ZarinpalMonetizationConstants.PRODUCT, oldProductId);
             }
             if (StringUtils.isNotBlank(newProductId)) {
-                planParams.put(StripeMonetizationConstants.PRODUCT, newProductId);
+                planParams.put(ZarinpalMonetizationConstants.PRODUCT, newProductId);
             }
-            planParams.put(StripeMonetizationConstants.PRODUCT_NICKNAME, subscriptionPolicy.getPolicyName());
-            planParams.put(StripeMonetizationConstants.INTERVAL, subscriptionPolicy.getMonetizationPlanProperties().
+            planParams.put(ZarinpalMonetizationConstants.PRODUCT_NICKNAME, subscriptionPolicy.getPolicyName());
+            planParams.put(ZarinpalMonetizationConstants.INTERVAL, subscriptionPolicy.getMonetizationPlanProperties().
                     get(APIConstants.Monetization.BILLING_CYCLE));
 
             if (APIConstants.Monetization.FIXED_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
                 float amount = Float.parseFloat(subscriptionPolicy.getMonetizationPlanProperties().
                         get(APIConstants.Monetization.FIXED_PRICE));
-                //need to multiply the input for "amount" by 100 for stripe (because it divides the value by 100)
-                //also, since stripe supports only integers, convert the amount to an int before creating the plan
-                planParams.put(StripeMonetizationConstants.AMOUNT, (int) (amount * 100));
-                planParams.put(StripeMonetizationConstants.USAGE_TYPE, StripeMonetizationConstants.LICENSED_USAGE);
+                //need to multiply the input for "amount" by 100 for zarinpal (because it divides the value by 100)
+                //also, since zarinpal supports only integers, convert the amount to an int before creating the plan
+                planParams.put(ZarinpalMonetizationConstants.AMOUNT, (int) (amount * 100));
+                planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, ZarinpalMonetizationConstants.LICENSED_USAGE);
             }
-            if (StripeMonetizationConstants.DYNAMIC_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
+            if (ZarinpalMonetizationConstants.DYNAMIC_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
                 float amount = Float.parseFloat(subscriptionPolicy.getMonetizationPlanProperties().
                         get(APIConstants.Monetization.PRICE_PER_REQUEST));
-                //need to multiply the input for "amount" by 100 for stripe (because it divides the value by 100)
-                //also, since stripe supports only integers, convert the amount to an int before creating the plan
-                planParams.put(StripeMonetizationConstants.AMOUNT, (int) (amount * 100));
-                planParams.put(StripeMonetizationConstants.USAGE_TYPE, StripeMonetizationConstants.METERED_USAGE);
+                //need to multiply the input for "amount" by 100 for zarinpal (because it divides the value by 100)
+                //also, since zarinpal supports only integers, convert the amount to an int before creating the plan
+                planParams.put(ZarinpalMonetizationConstants.AMOUNT, (int) (amount * 100));
+                planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, ZarinpalMonetizationConstants.METERED_USAGE);
             }
             Plan updatedPlan = null;
             try {
                 updatedPlan = Plan.create(planParams);
-            } catch (StripeException e) {
-                String errorMessage = "Failed to create stripe plan for tier : " + subscriptionPolicy.getPolicyName();
+            } catch (ZarinpalException e) {
+                String errorMessage = "Failed to create zarinpal plan for tier : " + subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage, e);
             }
@@ -285,7 +275,7 @@ public class StripeMonetizationImpl implements Monetization {
                 throw new MonetizationException(errorMessage);
             }
             if (StringUtils.isBlank(updatedPlanId)) {
-                String errorMessage = "Failed to update stripe plan for tier : " + subscriptionPolicy.getPolicyName() +
+                String errorMessage = "Failed to update zarinpal plan for tier : " + subscriptionPolicy.getPolicyName() +
                         " in " + subscriptionPolicy.getTenantDomain();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage);
@@ -294,16 +284,16 @@ public class StripeMonetizationImpl implements Monetization {
             try {
                 //If updated to a free plan (from a commercial plan), no need to create any plan in the billing engine
                 //hence delete the DB record
-                stripeMonetizationDAO.deleteMonetizationPlanData(subscriptionPolicy);
+                zarinpalMonetizationDAO.deleteMonetizationPlanData(subscriptionPolicy);
                 //Remove old artifacts in the billing engine (if any)
                 if (StringUtils.isNotBlank(oldProductId)) {
                     Product.retrieve(oldProductId).delete();
                 }
-            } catch (StripeException e) {
-                String errorMessage = "Failed to delete old stripe product for : " + subscriptionPolicy.getPolicyName();
+            } catch (ZarinpalException e) {
+                String errorMessage = "Failed to delete old zarinpal product for : " + subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage, e);
-            } catch (StripeMonetizationException e) {
+            } catch (ZarinpalMonetizationException e) {
                 String errorMessage = "Failed to delete monetization plan data from database for : " +
                         subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
@@ -313,13 +303,13 @@ public class StripeMonetizationImpl implements Monetization {
         try {
             if (StringUtils.isNotBlank(oldProductId)) {
                 //update DB record
-                stripeMonetizationDAO.updateMonetizationPlanData(subscriptionPolicy, oldProductId, updatedPlanId);
+                zarinpalMonetizationDAO.updateMonetizationPlanData(subscriptionPolicy, oldProductId, updatedPlanId);
             }
             if (StringUtils.isNotBlank(newProductId)) {
                 //create new DB record
-                stripeMonetizationDAO.addMonetizationPlanData(subscriptionPolicy, newProductId, updatedPlanId);
+                zarinpalMonetizationDAO.addMonetizationPlanData(subscriptionPolicy, newProductId, updatedPlanId);
             }
-        } catch (StripeMonetizationException e) {
+        } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Failed to update monetization plan data in database for : " +
                     subscriptionPolicy.getPolicyName();
             //throw MonetizationException as it will be logged and handled by the caller
@@ -340,9 +330,9 @@ public class StripeMonetizationImpl implements Monetization {
         //get old plan (if any) in the billing engine and delete
         Map<String, String> planData = null;
         try {
-            planData = stripeMonetizationDAO.getPlanData(subscriptionPolicy);
-        } catch (StripeMonetizationException e) {
-            String errorMessage = "Failed to get stripe plan data for policy : " + subscriptionPolicy.getPolicyName() +
+            planData = zarinpalMonetizationDAO.getPlanData(subscriptionPolicy);
+        } catch (ZarinpalMonetizationException e) {
+            String errorMessage = "Failed to get zarinpal plan data for policy : " + subscriptionPolicy.getPolicyName() +
                     " when deleting billing plan.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -351,13 +341,13 @@ public class StripeMonetizationImpl implements Monetization {
             log.debug("No billing plan found for : " + subscriptionPolicy.getPolicyName());
             return true;
         }
-        String productId = planData.get(StripeMonetizationConstants.PRODUCT_ID);
-        String planId = planData.get(StripeMonetizationConstants.PLAN_ID);
+        String productId = planData.get(ZarinpalMonetizationConstants.PRODUCT_ID);
+        String planId = planData.get(ZarinpalMonetizationConstants.PLAN_ID);
         try {
             //read tenant-conf.json and get platform account key
-            Stripe.apiKey = getStripePlatformAccountKey(subscriptionPolicy.getTenantDomain());
-        } catch (StripeMonetizationException e) {
-            String errorMessage = "Failed to get Stripe platform account key for tenant :  " +
+            Zarinpal.apiKey = getZarinpalPlatformAccountKey(subscriptionPolicy.getTenantDomain());
+        } catch (ZarinpalMonetizationException e) {
+            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
                     subscriptionPolicy.getTenantDomain() + " when deleting billing plan.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -366,12 +356,12 @@ public class StripeMonetizationImpl implements Monetization {
             try {
                 Plan.retrieve(planId).delete();
                 Product.retrieve(productId).delete();
-                stripeMonetizationDAO.deleteMonetizationPlanData(subscriptionPolicy);
-            } catch (StripeException e) {
+                zarinpalMonetizationDAO.deleteMonetizationPlanData(subscriptionPolicy);
+            } catch (ZarinpalException e) {
                 String errorMessage = "Failed to delete billing plan resources of : " + subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage, e);
-            } catch (StripeMonetizationException e) {
+            } catch (ZarinpalMonetizationException e) {
                 String errorMessage = "Failed to delete billing plan data from database of policy : " +
                         subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
@@ -396,26 +386,26 @@ public class StripeMonetizationImpl implements Monetization {
         String platformAccountKey = null;
         try {
             //read tenant conf and get platform account key
-            platformAccountKey = getStripePlatformAccountKey(tenantDomain);
-        } catch (StripeMonetizationException e) {
-            String errorMessage = "Failed to get Stripe platform account key for tenant :  " +
+            platformAccountKey = getZarinpalPlatformAccountKey(tenantDomain);
+        } catch (ZarinpalMonetizationException e) {
+            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
                     tenantDomain + " when enabling monetization for : " + api.getId().getApiName();
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
         }
         String connectedAccountKey;
-        //get api publisher's stripe key (i.e - connected account key) from monetization properties in request payload
+        //get api publisher's zarinpal key (i.e - connected account key) from monetization properties in request payload
         if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
             connectedAccountKey = monetizationProperties.get
-                    (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
+                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
             if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account stripe key was not found for : " + api.getId().getApiName();
+                String errorMessage = "Connected account zarinpal key was not found for : " + api.getId().getApiName();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage);
             }
         } else {
-            String errorMessage = "Stripe key of the connected account is empty.";
+            String errorMessage = "Zarinpal key of the connected account is empty.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage);
         }
@@ -427,17 +417,17 @@ public class StripeMonetizationImpl implements Monetization {
             String billingProductIdForApi = getBillingProductIdForApi(apiId);
             //create billing engine product if it does not exist
             if (StringUtils.isEmpty(billingProductIdForApi)) {
-                Stripe.apiKey = platformAccountKey;
+                Zarinpal.apiKey = platformAccountKey;
                 Map<String, Object> productParams = new HashMap<String, Object>();
-                String stripeProductName = apiName + "-" + apiVersion + "-" + apiProvider;
-                productParams.put(APIConstants.POLICY_NAME_ELEM, stripeProductName);
-                productParams.put(APIConstants.TYPE, StripeMonetizationConstants.SERVICE_TYPE);
-                RequestOptions productRequestOptions = RequestOptions.builder().setStripeAccount(
+                String zarinpalProductName = apiName + "-" + apiVersion + "-" + apiProvider;
+                productParams.put(APIConstants.POLICY_NAME_ELEM, zarinpalProductName);
+                productParams.put(APIConstants.TYPE, ZarinpalMonetizationConstants.SERVICE_TYPE);
+                RequestOptions productRequestOptions = RequestOptions.builder().setZarinpalAccount(
                         connectedAccountKey).build();
                 try {
                     Product product = Product.create(productParams, productRequestOptions);
                     billingProductIdForApi = product.getId();
-                } catch (StripeException e) {
+                } catch (ZarinpalException e) {
                     String errorMessage = "Unable to create product in billing engine for : " + apiName;
                     //throw MonetizationException as it will be logged and handled by the caller
                     throw new MonetizationException(errorMessage, e);
@@ -462,9 +452,9 @@ public class StripeMonetizationImpl implements Monetization {
                     }
                 }
             }
-            //save data in the database - only if there is a stripe product and newly created plans
+            //save data in the database - only if there is a zarinpal product and newly created plans
             if (StringUtils.isNotBlank(billingProductIdForApi) && MapUtils.isNotEmpty(tierPlanMap)) {
-                stripeMonetizationDAO.addMonetizationData(apiId, billingProductIdForApi, tierPlanMap);
+                zarinpalMonetizationDAO.addMonetizationData(apiId, billingProductIdForApi, tierPlanMap);
             } else {
                 return false;
             }
@@ -472,8 +462,8 @@ public class StripeMonetizationImpl implements Monetization {
             String errorMessage = "Failed to get ID from database for : " + apiName;
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
-        } catch (StripeMonetizationException e) {
-            String errorMessage = "Failed to create products and plans in stripe for : " + apiName;
+        } catch (ZarinpalMonetizationException e) {
+            String errorMessage = "Failed to create products and plans in zarinpal for : " + apiName;
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
         }
@@ -494,19 +484,19 @@ public class StripeMonetizationImpl implements Monetization {
         String platformAccountKey = null;
         try {
             //read tenant conf and get platform account key
-            platformAccountKey = getStripePlatformAccountKey(tenantDomain);
-        } catch (StripeMonetizationException e) {
-            String errorMessage = "Failed to get Stripe platform account key for tenant :  " +
+            platformAccountKey = getZarinpalPlatformAccountKey(tenantDomain);
+        } catch (ZarinpalMonetizationException e) {
+            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
                     tenantDomain + " when disabling monetization for : " + api.getId().getApiName();
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
         }
         String connectedAccountKey = StringUtils.EMPTY;
-        //get api publisher's stripe key (i.e - connected account key) from monetization properties in request payload
+        //get api publisher's zarinpal key (i.e - connected account key) from monetization properties in request payload
         if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
             connectedAccountKey = monetizationProperties.get
-                    (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
+                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
             if (StringUtils.isBlank(connectedAccountKey)) {
                 String errorMessage = "Billing engine connected account key was not found for : " +
                         api.getId().getApiName();
@@ -514,7 +504,7 @@ public class StripeMonetizationImpl implements Monetization {
                 throw new MonetizationException(errorMessage);
             }
         } else {
-            String errorMessage = "Stripe key of the connected account is empty for tenant : " + tenantDomain;
+            String errorMessage = "Zarinpal key of the connected account is empty for tenant : " + tenantDomain;
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage);
         }
@@ -526,10 +516,10 @@ public class StripeMonetizationImpl implements Monetization {
             if (StringUtils.isBlank(billingProductIdForApi)) {
                 return false;
             }
-            Map<String, String> tierToBillingEnginePlanMap = stripeMonetizationDAO.getTierToBillingEnginePlanMapping
+            Map<String, String> tierToBillingEnginePlanMap = zarinpalMonetizationDAO.getTierToBillingEnginePlanMapping
                     (apiId, billingProductIdForApi);
-            Stripe.apiKey = platformAccountKey;
-            RequestOptions requestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
+            Zarinpal.apiKey = platformAccountKey;
+            RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
 
             for (Map.Entry<String, String> entry : tierToBillingEnginePlanMap.entrySet()) {
                 String planId = entry.getValue();
@@ -542,13 +532,13 @@ public class StripeMonetizationImpl implements Monetization {
             product.delete(requestOptions);
             log.debug("Successfully deleted billing product : " + billingProductIdForApi + " of : " + apiName);
             //after deleting plans and the product, clean the database records
-            stripeMonetizationDAO.deleteMonetizationData(apiId);
+            zarinpalMonetizationDAO.deleteMonetizationData(apiId);
             log.debug("Successfully deleted monetization database records for : " + apiName);
-        } catch (StripeException e) {
+        } catch (ZarinpalException e) {
             String errorMessage = "Failed to delete products and plans in the billing engine.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
-        } catch (StripeMonetizationException e) {
+        } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Failed to fetch database records when disabling monetization for : " + api.getId().getApiName();
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -580,8 +570,8 @@ public class StripeMonetizationImpl implements Monetization {
                 return new HashMap<String, String>();
             }
             //get tier to billing engine plan mapping
-            return stripeMonetizationDAO.getTierToBillingEnginePlanMapping(apiId, billingProductIdForApi);
-        } catch (StripeMonetizationException e) {
+            return zarinpalMonetizationDAO.getTierToBillingEnginePlanMapping(apiId, billingProductIdForApi);
+        } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Failed to get tier to billing engine plan mapping for : " + api.getId().getApiName();
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -615,10 +605,10 @@ public class StripeMonetizationImpl implements Monetization {
         JSONObject jsonObj = null;
         APIAdmin apiAdmin = new APIAdminImpl();
 
-        DateFormat df = new SimpleDateFormat(StripeMonetizationConstants.TIME_FORMAT);
+        DateFormat df = new SimpleDateFormat(ZarinpalMonetizationConstants.TIME_FORMAT);
         Date dateobj = new Date();
         //get the time in UTC format
-        df.setTimeZone(TimeZone.getTimeZone(StripeMonetizationConstants.TIME_ZONE));
+        df.setTimeZone(TimeZone.getTimeZone(ZarinpalMonetizationConstants.TIME_ZONE));
         String currentDate = df.format(dateobj);
         currentTimestamp = getTimestamp(currentDate);
         try {
@@ -646,7 +636,7 @@ public class StripeMonetizationImpl implements Monetization {
                         applicationId = Integer.parseInt((String) recordArray.get(4));
                         requestCount = (Long) recordArray.get(5);
                         //get the billing engine subscription details
-                        MonetizedSubscription subscription = stripeMonetizationDAO.getMonetizedSubscription(apiName,
+                        MonetizedSubscription subscription = zarinpalMonetizationDAO.getMonetizedSubscription(apiName,
                                 apiVersion, apiProvider, applicationId, tenantDomain);
                         if (subscription.getSubscriptionId() != null) {
                             try {
@@ -655,9 +645,9 @@ public class StripeMonetizationImpl implements Monetization {
                                 PrivilegedCarbonContext.getThreadLocalCarbonContext().
                                         setTenantDomain(tenantDomain, true);
                                 //read tenant conf and get platform account key
-                                Stripe.apiKey = getStripePlatformAccountKey(tenantDomain);
-                            } catch (StripeMonetizationException e) {
-                                String errorMessage = "Failed to get Stripe platform account key for tenant :  " +
+                                Zarinpal.apiKey = getZarinpalPlatformAccountKey(tenantDomain);
+                            } catch (ZarinpalMonetizationException e) {
+                                String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
                                         tenantDomain + " when disabling monetization for : " + apiName;
                                 //throw MonetizationException as it will be logged and handled by the caller
                                 throw new MonetizationException(errorMessage, e);
@@ -675,26 +665,26 @@ public class StripeMonetizationImpl implements Monetization {
                                 API api = apiProvider1.getAPI(identifier);
                                 Map<String, String> monetizationProperties = new Gson().fromJson(
                                         api.getMonetizationProperties().toString(), HashMap.class);
-                                //get api publisher's stripe key (i.e - connected account key) from monetization
+                                //get api publisher's zarinpal key (i.e - connected account key) from monetization
                                 // properties in request payload
                                 if (MapUtils.isNotEmpty(monetizationProperties) &&
                                         monetizationProperties.containsKey(
-                                                StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+                                                ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
                                     connectedAccountKey = monetizationProperties.get
-                                            (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
+                                            (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
                                     if (StringUtils.isBlank(connectedAccountKey)) {
-                                        String errorMessage = "Connected account stripe key was not found for : "
+                                        String errorMessage = "Connected account zarinpal key was not found for : "
                                                 + api.getId().getApiName();
                                         //throw MonetizationException as it will be logged and handled by the caller
                                         throw new MonetizationException(errorMessage);
                                     }
                                 } else {
-                                    String errorMessage = "Stripe key of the connected account is empty.";
+                                    String errorMessage = "Zarinpal key of the connected account is empty.";
                                     //throw MonetizationException as it will be logged and handled by the caller
                                     throw new MonetizationException(errorMessage);
                                 }
                             } catch (APIManagementException e) {
-                                String errorMessage = "Failed to get the Stripe key of the connected account from "
+                                String errorMessage = "Failed to get the Zarinpal key of the connected account from "
                                         + "the : " + apiName;
                                 //throw MonetizationException as it will be logged and handled by the caller
                                 throw new MonetizationException(errorMessage, e);
@@ -702,24 +692,24 @@ public class StripeMonetizationImpl implements Monetization {
                                 PrivilegedCarbonContext.endTenantFlow();
                             }
                             RequestOptions subRequestOptions = RequestOptions.builder().
-                                    setStripeAccount(connectedAccountKey).build();
+                                    setZarinpalAccount(connectedAccountKey).build();
                             Subscription sub = Subscription.retrieve(subscription.getSubscriptionId(),
                                     subRequestOptions);
                             //get the first subscription item from the array
                             subscriptionItem = sub.getItems().getData().get(0);
                             //check whether the billing plan is Usage Based.
                             if (subscriptionItem.getPlan().getUsageType().equals(
-                                    StripeMonetizationConstants.METERED_PLAN)) {
+                                    ZarinpalMonetizationConstants.METERED_PLAN)) {
                                 flag++;
                                 Map<String, Object> usageRecordParams = new HashMap<String, Object>();
-                                usageRecordParams.put(StripeMonetizationConstants.QUANTITY, requestCount);
+                                usageRecordParams.put(ZarinpalMonetizationConstants.QUANTITY, requestCount);
                                 //provide the timesatmp in second format
-                                usageRecordParams.put(StripeMonetizationConstants.TIMESTAMP,
+                                usageRecordParams.put(ZarinpalMonetizationConstants.TIMESTAMP,
                                         getTimestamp(currentDate) / 1000);
-                                usageRecordParams.put(StripeMonetizationConstants.ACTION,
-                                        StripeMonetizationConstants.INCREMENT);
+                                usageRecordParams.put(ZarinpalMonetizationConstants.ACTION,
+                                        ZarinpalMonetizationConstants.INCREMENT);
                                 RequestOptions usageRequestOptions = RequestOptions.builder().
-                                        setStripeAccount(connectedAccountKey).setIdempotencyKey(subscriptionItem.getId()
+                                        setZarinpalAccount(connectedAccountKey).setIdempotencyKey(subscriptionItem.getId()
                                         + lastPublishInfo.getLastPublishTime() + requestCount).build();
                                 UsageRecord usageRecord = UsageRecord.createOnSubscriptionItem(
                                         subscriptionItem.getId(), usageRecordParams, usageRequestOptions);
@@ -728,7 +718,7 @@ public class StripeMonetizationImpl implements Monetization {
                                     counter++;
                                     if (log.isDebugEnabled()) {
                                         String msg = "Usage for " + apiName + " by Application with ID " + applicationId
-                                                + " is successfully published to Stripe";
+                                                + " is successfully published to Zarinpal";
                                         log.info(msg);
                                     }
                                 }
@@ -737,11 +727,11 @@ public class StripeMonetizationImpl implements Monetization {
                     }
                 }
             }
-        } catch (StripeMonetizationException e) {
+        } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Unable to Publish usage Record to Billing Engine";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
-        } catch (StripeException e) {
+        } catch (ZarinpalException e) {
             String errorMessage = "Unable to Publish usage Record";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -751,8 +741,8 @@ public class StripeMonetizationImpl implements Monetization {
             try {
                 //last publish time will be updated only if all the records are successfull
                 lastPublishInfo.setLastPublishTime(currentTimestamp);
-                lastPublishInfo.setState(StripeMonetizationConstants.COMPLETED);
-                lastPublishInfo.setStatus(StripeMonetizationConstants.SUCCESSFULL);
+                lastPublishInfo.setState(ZarinpalMonetizationConstants.COMPLETED);
+                lastPublishInfo.setStatus(ZarinpalMonetizationConstants.SUCCESSFULL);
                 apiAdmin.updateMonetizationUsagePublishInfo(lastPublishInfo);
             } catch (APIManagementException ex) {
                 String msg = "Failed to update last published time ";
@@ -762,8 +752,8 @@ public class StripeMonetizationImpl implements Monetization {
             return true;
         }
         try {
-            lastPublishInfo.setState(StripeMonetizationConstants.COMPLETED);
-            lastPublishInfo.setStatus(StripeMonetizationConstants.UNSUCCESSFULL);
+            lastPublishInfo.setState(ZarinpalMonetizationConstants.COMPLETED);
+            lastPublishInfo.setStatus(ZarinpalMonetizationConstants.UNSUCCESSFULL);
             apiAdmin.updateMonetizationUsagePublishInfo(lastPublishInfo);
         } catch (APIManagementException ex) {
             String msg = "Failed to update last published time ";
@@ -828,20 +818,20 @@ public class StripeMonetizationImpl implements Monetization {
             }
             String tenantDomain = PrivilegedCarbonContext.getThreadLocalCarbonContext().getTenantDomain();
             //get billing engine platform account key
-            String platformAccountKey = getStripePlatformAccountKey(tenantDomain);
-            if (monetizationDataMap.containsKey(StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+            String platformAccountKey = getZarinpalPlatformAccountKey(tenantDomain);
+            if (monetizationDataMap.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
                 String connectedAccountKey = monetizationDataMap.get
-                        (StripeMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY).toString();
+                        (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY).toString();
                 if (StringUtils.isBlank(connectedAccountKey)) {
-                    String errorMessage = "Connected account stripe key was not found for : " + apiName;
+                    String errorMessage = "Connected account zarinpal key was not found for : " + apiName;
                     //throw MonetizationException as it will be logged and handled by the caller
                     throw new MonetizationException(errorMessage);
                 }
-                Stripe.apiKey = platformAccountKey;
+                Zarinpal.apiKey = platformAccountKey;
                 //create request options to link with the connected account
-                RequestOptions requestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
+                RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
                 int applicationId = subscribedAPI.getApplication().getId();
-                String billingPlanSubscriptionId = stripeMonetizationDAO.getBillingEngineSubscriptionId(apiId, applicationId);
+                String billingPlanSubscriptionId = zarinpalMonetizationDAO.getBillingEngineSubscriptionId(apiId, applicationId);
                 Subscription billingEngineSubscription = Subscription.retrieve(billingPlanSubscriptionId, requestOptions);
                 if (billingEngineSubscription == null) {
                     String errorMessage = "No billing engine subscription was found for : " + apiName;
@@ -849,7 +839,7 @@ public class StripeMonetizationImpl implements Monetization {
                     throw new MonetizationException(errorMessage);
                 }
                 //upcoming invoice is only applicable for metered usage (i.e - dynamic usage)
-                if (!StripeMonetizationConstants.METERED_USAGE.equalsIgnoreCase
+                if (!ZarinpalMonetizationConstants.METERED_USAGE.equalsIgnoreCase
                         (billingEngineSubscription.getPlan().getUsageType())) {
                     String errorMessage = "Usage type should be set to 'metered' to get the pending bill.";
                     //throw MonetizationException as it will be logged and handled by the caller
@@ -897,7 +887,7 @@ public class StripeMonetizationImpl implements Monetization {
                 billingEngineUsageData.put("Period Start", invoice.getPeriodStart() != null ?
                         dateFormatter.format(new Date(invoice.getPeriodStart() * 1000)) : null);
 
-                //the below parameters are also returned from stripe, but commented for simplicity of the invoice
+                //the below parameters are also returned from zarinpal, but commented for simplicity of the invoice
                 /*billingEngineUsageData.put("object", "invoice");
                 billingEngineUsageData.put("Application Fee Amount", invoice.getApplicationFeeAmount() != null ?
                         invoice.getApplicationFeeAmount().toString() : null);
@@ -927,7 +917,7 @@ public class StripeMonetizationImpl implements Monetization {
                 billingEngineUsageData.put("Tax Percent", invoice.getTaxPercent() != null ?
                         invoice.getTaxPercent().toString() : null);*/
             }
-        } catch (StripeException e) {
+        } catch (ZarinpalException e) {
             String errorMessage = "Error while fetching billing engine usage data for : " + apiName;
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -935,7 +925,7 @@ public class StripeMonetizationImpl implements Monetization {
             String errorMessage = "Failed to get subscription details of : " + apiName;
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
-        } catch (StripeMonetizationException e) {
+        } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Failed to get billing engine data for subscription : " + subscriptionUUID;
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -961,7 +951,7 @@ public class StripeMonetizationImpl implements Monetization {
             for (SubscribedAPI subscribedAPI : apiUsages) {
                 //get subscription UUID for each subscription
                 int subscriptionId = subscribedAPI.getSubscriptionId();
-                String subscriptionUUID = stripeMonetizationDAO.getSubscriptionUUID(subscriptionId);
+                String subscriptionUUID = zarinpalMonetizationDAO.getSubscriptionUUID(subscriptionId);
                 //get revenue for each subscription and add them
                 Map<String, String> billingEngineUsageData = getCurrentUsageForSubscription(subscriptionUUID, apiProvider);
                 revenueData.put("Revenue for subscription ID : " + subscriptionId,
@@ -971,7 +961,7 @@ public class StripeMonetizationImpl implements Monetization {
             String errorMessage = "Failed to get subscriptions of : " + apiIdentifier.getApiName();
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
-        } catch (StripeMonetizationException e) {
+        } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Failed to get subscription UUID of : " + apiIdentifier.getApiName();
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -980,13 +970,13 @@ public class StripeMonetizationImpl implements Monetization {
     }
 
     /**
-     * This method is used to get stripe platform account key for a given tenant
+     * This method is used to get zarinpal platform account key for a given tenant
      *
      * @param tenantDomain tenant domain
-     * @return stripe platform account key for the given tenant
-     * @throws StripeMonetizationException if it fails to get stripe platform account key for the given tenant
+     * @return zarinpal platform account key for the given tenant
+     * @throws ZarinpalMonetizationException if it fails to get zarinpal platform account key for the given tenant
      */
-    private String getStripePlatformAccountKey(String tenantDomain) throws StripeMonetizationException {
+    private String getZarinpalPlatformAccountKey(String tenantDomain) throws ZarinpalMonetizationException {
 
         try {
             int tenantId = ServiceReferenceHolder.getInstance().getRealmService().getTenantManager().
@@ -999,31 +989,31 @@ public class StripeMonetizationImpl implements Monetization {
                 if (StringUtils.isBlank(tenantConfContent)) {
                     String errorMessage = "Tenant configuration for tenant " + tenantDomain +
                             " cannot be empty when configuring monetization.";
-                    throw new StripeMonetizationException(errorMessage);
+                    throw new ZarinpalMonetizationException(errorMessage);
                 }
-                //get the stripe key of platform account from  tenant conf json file
+                //get the zarinpal key of platform account from  tenant conf json file
                 JSONObject tenantConfig = (JSONObject) new JSONParser().parse(tenantConfContent);
-                JSONObject monetizationInfo = (JSONObject) tenantConfig.get(StripeMonetizationConstants.MONETIZATION_INFO);
-                String stripePlatformAccountKey = monetizationInfo.get
-                        (StripeMonetizationConstants.BILLING_ENGINE_PLATFORM_ACCOUNT_KEY).toString();
-                if (StringUtils.isBlank(stripePlatformAccountKey)) {
-                    String errorMessage = "Stripe platform account key is empty for tenant : " + tenantDomain;
-                    throw new StripeMonetizationException(errorMessage);
+                JSONObject monetizationInfo = (JSONObject) tenantConfig.get(ZarinpalMonetizationConstants.MONETIZATION_INFO);
+                String zarinpalPlatformAccountKey = monetizationInfo.get
+                        (ZarinpalMonetizationConstants.BILLING_ENGINE_PLATFORM_ACCOUNT_KEY).toString();
+                if (StringUtils.isBlank(zarinpalPlatformAccountKey)) {
+                    String errorMessage = "Zarinpal platform account key is empty for tenant : " + tenantDomain;
+                    throw new ZarinpalMonetizationException(errorMessage);
                 }
-                return stripePlatformAccountKey;
+                return zarinpalPlatformAccountKey;
             }
         } catch (ParseException e) {
             String errorMessage = "Error while parsing tenant configuration in tenant : " + tenantDomain;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } catch (UserStoreException e) {
             String errorMessage = "Failed to get the corresponding tenant configurations for tenant :  " + tenantDomain;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } catch (RegistryException e) {
             String errorMessage = "Failed to get the configuration registry for tenant :  " + tenantDomain;
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         }
         return StringUtils.EMPTY;
     }
@@ -1033,12 +1023,12 @@ public class StripeMonetizationImpl implements Monetization {
      *
      * @param apiId API ID
      * @return billing product ID for the given API
-     * @throws StripeMonetizationException if failed to get billing product ID for the given API
+     * @throws ZarinpalMonetizationException if failed to get billing product ID for the given API
      */
-    private String getBillingProductIdForApi(int apiId) throws StripeMonetizationException {
+    private String getBillingProductIdForApi(int apiId) throws ZarinpalMonetizationException {
 
         String billingProductId = StringUtils.EMPTY;
-        billingProductId = stripeMonetizationDAO.getBillingEngineProductId(apiId);
+        billingProductId = zarinpalMonetizationDAO.getBillingEngineProductId(apiId);
         return billingProductId;
     }
 
@@ -1048,12 +1038,12 @@ public class StripeMonetizationImpl implements Monetization {
      * @param apiId    API ID
      * @param tierName tier name
      * @return billing plan ID for a given tier
-     * @throws StripeMonetizationException if failed to get billing plan ID for the given tier
+     * @throws ZarinpalMonetizationException if failed to get billing plan ID for the given tier
      */
-    private String getBillingPlanIdOfTier(int apiId, String tierName) throws StripeMonetizationException {
+    private String getBillingPlanIdOfTier(int apiId, String tierName) throws ZarinpalMonetizationException {
 
         String billingPlanId = StringUtils.EMPTY;
-        billingPlanId = stripeMonetizationDAO.getBillingEnginePlanIdForTier(apiId, tierName);
+        billingPlanId = zarinpalMonetizationDAO.getBillingEnginePlanIdForTier(apiId, tierName);
         return billingPlanId;
     }
 
@@ -1066,40 +1056,40 @@ public class StripeMonetizationImpl implements Monetization {
      * @param connectedAccountKey billing engine connected account key
      * @param billingProductId    billing engine product ID
      * @return created plan ID in billing engine
-     * @throws StripeMonetizationException if fails to create billing plan
+     * @throws ZarinpalMonetizationException if fails to create billing plan
      */
     private String createBillingPlanForCommercialTier(Tier tier, int tenantId, String platformAccountKey,
                                                       String connectedAccountKey, String billingProductId)
-            throws StripeMonetizationException {
+            throws ZarinpalMonetizationException {
 
         try {
             String tierUUID = ApiMgtDAO.getInstance().getSubscriptionPolicy(tier.getName(), tenantId).getUUID();
             //get plan ID from mapping table
-            String planId = stripeMonetizationDAO.getBillingPlanId(tierUUID);
-            Stripe.apiKey = platformAccountKey;
+            String planId = zarinpalMonetizationDAO.getBillingPlanId(tierUUID);
+            Zarinpal.apiKey = platformAccountKey;
             //get that plan details
             Plan billingPlan = Plan.retrieve(planId);
             //get the values from that plan and replicate it
             Map<String, Object> planParams = new HashMap<String, Object>();
-            planParams.put(StripeMonetizationConstants.AMOUNT, billingPlan.getAmount());
-            planParams.put(StripeMonetizationConstants.BILLING_SCHEME, billingPlan.getBillingScheme());
-            planParams.put(StripeMonetizationConstants.INTERVAL, billingPlan.getInterval());
-            planParams.put(StripeMonetizationConstants.PRODUCT_NICKNAME, billingPlan.getNickname());
-            planParams.put(StripeMonetizationConstants.PRODUCT, billingProductId);
-            planParams.put(StripeMonetizationConstants.CURRENCY, billingPlan.getCurrency());
-            planParams.put(StripeMonetizationConstants.USAGE_TYPE, billingPlan.getUsageType());
-            RequestOptions planRequestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
-            //create a new stripe plan for the tier
+            planParams.put(ZarinpalMonetizationConstants.AMOUNT, billingPlan.getAmount());
+            planParams.put(ZarinpalMonetizationConstants.BILLING_SCHEME, billingPlan.getBillingScheme());
+            planParams.put(ZarinpalMonetizationConstants.INTERVAL, billingPlan.getInterval());
+            planParams.put(ZarinpalMonetizationConstants.PRODUCT_NICKNAME, billingPlan.getNickname());
+            planParams.put(ZarinpalMonetizationConstants.PRODUCT, billingProductId);
+            planParams.put(ZarinpalMonetizationConstants.CURRENCY, billingPlan.getCurrency());
+            planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, billingPlan.getUsageType());
+            RequestOptions planRequestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
+            //create a new zarinpal plan for the tier
             Plan createdPlan = Plan.create(planParams, planRequestOptions);
             return createdPlan.getId();
-        } catch (StripeException e) {
+        } catch (ZarinpalException e) {
             String errorMessage = "Unable to create billing plan for : " + tier.getName();
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         } catch (APIManagementException e) {
             String errorMessage = "Failed to get UUID for tier :  " + tier.getName();
             log.error(errorMessage);
-            throw new StripeMonetizationException(errorMessage, e);
+            throw new ZarinpalMonetizationException(errorMessage, e);
         }
     }
 
@@ -1111,7 +1101,7 @@ public class StripeMonetizationImpl implements Monetization {
      */
     private long getTimestamp(String date) {
 
-        SimpleDateFormat formatter = new SimpleDateFormat(StripeMonetizationConstants.TIME_FORMAT);
+        SimpleDateFormat formatter = new SimpleDateFormat(ZarinpalMonetizationConstants.TIME_FORMAT);
         formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
         long time = 0;
         Date parsedDate = null;
