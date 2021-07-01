@@ -34,6 +34,15 @@ public class ZarinpalMonetizationConstants {
             "WHERE API_ID = ? AND STRIPE_PRODUCT_ID = ?";
     public static final String GET_BILLING_PLAN_FOR_TIER = "SELECT STRIPE_PLAN_ID FROM AM_MONETIZATION " +
             "WHERE API_ID = ? AND TIER_NAME = ?";
+    public static final String INSERT_MONETIZATION_PRODUCT_SQL =
+            "INSERT INTO AM_MONETIZATION_PRODUCTS (ID, NAME, TYPE) VALUES (?,?,?)";
+    public static final String DELETE_MONETIZATION_PRODUCT_SQL = "DELETE FROM AM_MONETIZATION_PRODUCTS WHERE ID = ?";
+    public static final String GET_MONETIZATION_PLAN_SQL = "SELECT ID, CURRENCY, PRODUCT_ID, PRODUCT_NICKNAME, " +
+            "INTERVAL, AMOUNT, USAGE_TYPE FROM AM_MONETIZATION_PLANS WHERE ID = ?";
+    public static final String INSERT_MONETIZATION_PLAN_SQL =
+            "INSERT INTO AM_MONETIZATION_PRODUCTS (ID, CURRENCY, PRODUCT_ID, PRODUCT_NICKNAME, INTERVAL, AMOUNT, USAGE_TYPE) " +
+                    "VALUES (?,?,?,?,?,?,?)";
+    public static final String DELETE_MONETIZATION_PLAN_SQL = "DELETE FROM AM_MONETIZATION_PLANS WHERE ID = ?";
     public static final String INSERT_MONETIZATION_PLAN_DATA_SQL =
             "INSERT INTO AM_POLICY_PLAN_MAPPING (POLICY_UUID, PRODUCT_ID, PLAN_ID) VALUES (?,?,?)";
     public static final String UPDATE_MONETIZATION_PLAN_ID_SQL = "UPDATE AM_POLICY_PLAN_MAPPING SET PLAN_ID = ? " +
@@ -53,15 +62,15 @@ public class ZarinpalMonetizationConstants {
 
     public static final String ADD_BE_SHARED_CUSTOMER_SQL =
             " INSERT" +
-                    " INTO AM_MONETIZATION_SHARED_CUSTOMERS (APPLICATION_ID,  API_PROVIDER," +
+                    " INTO AM_MONETIZATION_SHARED_CUSTOMERS (APPLICATION_ID, API_PROVIDER," +
                     " TENANT_ID, SHARED_CUSTOMER_ID, PARENT_CUSTOMER_ID)" +
                     " VALUES (?,?,?,?,?)";
 
     public static final String ADD_BE_SUBSCRIPTION_SQL =
             " INSERT" +
                     " INTO AM_MONETIZATION_SUBSCRIPTIONS (SUBSCRIBED_API_ID, SUBSCRIBED_APPLICATION_ID," +
-                    " TENANT_ID, SHARED_CUSTOMER_ID, SUBSCRIPTION_ID)" +
-                    " VALUES (?,?,?,?,?)";
+                    " TENANT_ID, SHARED_CUSTOMER_ID, SUBSCRIPTION_ID, PLAN_ID)" +
+                    " VALUES (?,?,?,?,?,?)";
 
     public static final String GET_BE_PLATFORM_CUSTOMER_SQL =
             "SELECT" +
@@ -79,7 +88,7 @@ public class ZarinpalMonetizationConstants {
 
     public static final String GET_BE_SUBSCRIPTION_SQL =
             " SELECT" +
-                    " ID, SUBSCRIPTION_ID" +
+                    " ID, SUBSCRIPTION_ID" + //", PLAN_ID" +
                     " FROM AM_MONETIZATION_SUBSCRIPTIONS" +
                     " WHERE" +
                     " SUBSCRIBED_APPLICATION_ID=? AND SUBSCRIBED_API_ID=? AND TENANT_ID=?";
