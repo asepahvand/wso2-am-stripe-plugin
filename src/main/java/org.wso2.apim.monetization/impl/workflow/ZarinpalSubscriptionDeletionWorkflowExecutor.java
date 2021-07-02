@@ -100,29 +100,7 @@ public class ZarinpalSubscriptionDeletionWorkflowExecutor extends WorkflowExecut
         MonetizedSubscription monetizedSubscription;
         ZarinpalMonetizationDAO zarinpalMonetizationDAO = new ZarinpalMonetizationDAO();
         subWorkflowDTO = (SubscriptionWorkflowDTO) workflowDTO;
-        //read the platform key of Zarinpal
-        Zarinpal.apiKey = getPlatformAccountKey(subWorkflowDTO.getTenantId());
-        String connectedAccountKey = StringUtils.EMPTY;
-        Map<String, String> monetizationProperties = new Gson().fromJson(api.getMonetizationProperties().toString(),
-                HashMap.class);
-        if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
-            // get the key of the connected account
-            connectedAccountKey = monetizationProperties.get
-                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
-            if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account zarinpal key was not found for : "
-                        + api.getId().getApiName();
-                log.error(errorMessage);
-                throw new WorkflowException(errorMessage);
-            }
-        } else {
-            String errorMessage = "Zarinpal key of the connected account is empty.";
-            log.error(errorMessage);
-            throw new WorkflowException(errorMessage);
-        }
-        //needed to add,remove artifacts in connected account
-        RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
+
         try {
             //get the zarinpal subscription id
             monetizedSubscription = zarinpalMonetizationDAO.getMonetizedSubscription(subWorkflowDTO.getApiName(),
@@ -135,25 +113,12 @@ public class ZarinpalSubscriptionDeletionWorkflowExecutor extends WorkflowExecut
         }
         if (monetizedSubscription.getSubscriptionId() != null) {
             try {
-                Subscription subscription = Subscription.retrieve(monetizedSubscription.getSubscriptionId(),
-                        requestOptions);
-                Map<String, Object> params = new HashMap<>();
-                //canceled subscription will be invoiced immediately
-                params.put(ZarinpalMonetizationConstants.INVOICE_NOW, true);
-                subscription = subscription.cancel(params, requestOptions);
-                if (StringUtils.equals(subscription.getStatus(), ZarinpalMonetizationConstants.CANCELED)) {
-                    zarinpalMonetizationDAO.removeMonetizedSubscription(monetizedSubscription.getId());
-                }
+                zarinpalMonetizationDAO.removeMonetizedSubscription(monetizedSubscription.getId());
                 if (log.isDebugEnabled()) {
                     String msg = "Monetized subscriprion for : " + subWorkflowDTO.getApiName()
                             + " by Application : " + subWorkflowDTO.getApplicationName() + " is removed successfully ";
                     log.debug(msg);
                 }
-            } catch (ZarinpalException ex) {
-                String errorMessage = "Failed to remove subcription in billing engine for : "
-                        + subWorkflowDTO.getApiName() + " by Application : " + subWorkflowDTO.getApplicationName();
-                log.error(errorMessage);
-                throw new WorkflowException(errorMessage, ex);
             } catch (ZarinpalMonetizationException ex) {
                 String errorMessage = "Failed to remove monetization subcription info from DB of : "
                         + subWorkflowDTO.getApiName() + " by Application : " + subWorkflowDTO.getApplicationName();
@@ -172,28 +137,7 @@ public class ZarinpalSubscriptionDeletionWorkflowExecutor extends WorkflowExecut
         MonetizedSubscription monetizedSubscription;
         ZarinpalMonetizationDAO zarinpalMonetizationDAO = new ZarinpalMonetizationDAO();
         subWorkflowDTO = (SubscriptionWorkflowDTO) workflowDTO;
-        //read the platform key of Zarinpal
-        Zarinpal.apiKey = getPlatformAccountKey(subWorkflowDTO.getTenantId());
-        String connectedAccountKey = StringUtils.EMPTY;
-        Map<String, String> monetizationProperties = new Gson().fromJson(apiProduct.getMonetizationProperties().toString(),
-                HashMap.class);
-        if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
-            // get the key of the connected account
-            connectedAccountKey = monetizationProperties.get
-                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
-            if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account zarinpal key was not found for : " + apiProduct.getId().getName();
-                log.error(errorMessage);
-                throw new WorkflowException(errorMessage);
-            }
-        } else {
-            String errorMessage = "Zarinpal key of the connected account is empty.";
-            log.error(errorMessage);
-            throw new WorkflowException(errorMessage);
-        }
-        //needed to add,remove artifacts in connected account
-        RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
+
         try {
             //get the zarinpal subscription id
             monetizedSubscription = zarinpalMonetizationDAO.getMonetizedSubscription(subWorkflowDTO.getApiName(),
@@ -206,25 +150,12 @@ public class ZarinpalSubscriptionDeletionWorkflowExecutor extends WorkflowExecut
         }
         if (monetizedSubscription.getSubscriptionId() != null) {
             try {
-                Subscription subscription = Subscription.retrieve(monetizedSubscription.getSubscriptionId(),
-                        requestOptions);
-                Map<String, Object> params = new HashMap<>();
-                //canceled subscription will be invoiced immediately
-                params.put(ZarinpalMonetizationConstants.INVOICE_NOW, true);
-                subscription = subscription.cancel(params, requestOptions);
-                if (StringUtils.equals(subscription.getStatus(), ZarinpalMonetizationConstants.CANCELED)) {
-                    zarinpalMonetizationDAO.removeMonetizedSubscription(monetizedSubscription.getId());
-                }
+                zarinpalMonetizationDAO.removeMonetizedSubscription(monetizedSubscription.getId());
                 if (log.isDebugEnabled()) {
                     String msg = "Monetized subscriprion for : " + subWorkflowDTO.getApiName()
                             + " by application : " + subWorkflowDTO.getApplicationName() + " is removed successfully ";
                     log.debug(msg);
                 }
-            } catch (ZarinpalException ex) {
-                String errorMessage = "Failed to remove subcription in billing engine for : "
-                        + subWorkflowDTO.getApiName() + " by Application : " + subWorkflowDTO.getApplicationName();
-                log.error(errorMessage);
-                throw new WorkflowException(errorMessage, ex);
             } catch (ZarinpalMonetizationException ex) {
                 String errorMessage = "Failed to remove monetization subcription info from DB of : "
                         + subWorkflowDTO.getApiName() + " by Application : " + subWorkflowDTO.getApplicationName();
