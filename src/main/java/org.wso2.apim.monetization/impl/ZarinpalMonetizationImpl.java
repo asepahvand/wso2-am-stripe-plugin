@@ -17,6 +17,7 @@
 package org.wso2.apim.monetization.impl;
 
 import com.google.gson.Gson;
+import com.google.gson.internal.LinkedTreeMap;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -44,6 +45,7 @@ import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.APIManagerFactory;
 import org.wso2.carbon.apimgt.impl.dao.ApiMgtDAO;
 import org.wso2.carbon.apimgt.impl.internal.ServiceReferenceHolder;
+import org.wso2.carbon.apimgt.impl.utils.APIMgtDBUtil;
 import org.wso2.carbon.apimgt.impl.utils.APIUtil;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.registry.core.Registry;
@@ -52,14 +54,12 @@ import org.wso2.carbon.registry.core.exceptions.RegistryException;
 import org.wso2.carbon.user.api.UserStoreException;
 
 import java.nio.charset.Charset;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TimeZone;
+import java.util.*;
 
 /**
  * This class is used to implement zarinpal based monetization
@@ -79,61 +79,40 @@ public class ZarinpalMonetizationImpl implements Monetization {
     public boolean createBillingPlan(SubscriptionPolicy subscriptionPolicy) throws MonetizationException {
 
         try {
-            //read tenant conf and get platform account key
-            Zarinpal.apiKey = getZarinpalPlatformAccountKey(subscriptionPolicy.getTenantDomain());
-        } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
-                    subscriptionPolicy.getTenantDomain();
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        }
-        Map<String, Object> productParams = new HashMap<String, Object>();
-        productParams.put(APIConstants.POLICY_NAME_ELEM, subscriptionPolicy.getTenantDomain() +
-                "-" + subscriptionPolicy.getPolicyName());
-        productParams.put(APIConstants.TYPE, ZarinpalMonetizationConstants.SERVICE_TYPE);
-        Timestamp timestamp = new Timestamp(new Date().getTime());
-        String productCreationIdempotencyKey = subscriptionPolicy.getTenantDomain() + timestamp.toString();
-        RequestOptions productRequestOptions = RequestOptions.builder().
-                setIdempotencyKey(productCreationIdempotencyKey).build();
-        try {
-            Product product = Product.create(productParams, productRequestOptions);
-            String productId = product.getId();
-            if (StringUtils.isBlank(productId)) {
-                String errorMessage = "Failed to create zarinpal product for tenant : " +
+            Product product = new Product();
+            product.setName(subscriptionPolicy.getTenantDomain() + "-" + subscriptionPolicy.getPolicyName());
+            product.setType(ZarinpalMonetizationConstants.SERVICE_TYPE);
+            try {
+                zarinpalMonetizationDAO.addMonetizationProduct(product);
+            } catch (ProductMonetizationException e) {
+                String errorMessage = "Failed to create product for tenant : " +
                         subscriptionPolicy.getTenantDomain();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage);
             }
-            Map<String, Object> planParams = new HashMap<String, Object>();
-            String currencyType = subscriptionPolicy.getMonetizationPlanProperties().
-                    get(APIConstants.Monetization.CURRENCY).toLowerCase();
-            planParams.put(ZarinpalMonetizationConstants.CURRENCY, currencyType);
-            planParams.put(ZarinpalMonetizationConstants.PRODUCT, productId);
-            planParams.put(ZarinpalMonetizationConstants.PRODUCT_NICKNAME, subscriptionPolicy.getPolicyName());
-            planParams.put(ZarinpalMonetizationConstants.INTERVAL,
-                    subscriptionPolicy.getMonetizationPlanProperties().get(APIConstants.Monetization.BILLING_CYCLE));
+            String productId = product.getId();
+            Plan plan = new Plan();
+            plan.setCurrency(subscriptionPolicy.getMonetizationPlanProperties().
+                    get(APIConstants.Monetization.CURRENCY).toLowerCase());
+            plan.setProductId(productId);
+            plan.setProductNickname(subscriptionPolicy.getPolicyName());
+            plan.setInterval(subscriptionPolicy.getMonetizationPlanProperties().get(APIConstants.Monetization.BILLING_CYCLE));
             if (APIConstants.Monetization.FIXED_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
                 float amount = Float.parseFloat(subscriptionPolicy.getMonetizationPlanProperties().
                         get(APIConstants.Monetization.FIXED_PRICE));
-                //need to multiply the input for "amount" by 100 for zarinpal (because it divides the value by 100)
-                //also, since zarinpal supports only integers, convert the amount to an int before creating the plan
-                planParams.put(ZarinpalMonetizationConstants.AMOUNT, (int) (amount * 100));
-                planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, ZarinpalMonetizationConstants.LICENSED_USAGE);
+                plan.setAmount((int) amount);
+                plan.setUsageType(ZarinpalMonetizationConstants.LICENSED_USAGE);
             }
             if (ZarinpalMonetizationConstants.DYNAMIC_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
                 float amount = Float.parseFloat(subscriptionPolicy.getMonetizationPlanProperties().
                         get(APIConstants.Monetization.PRICE_PER_REQUEST));
-                //need to multiply the input for "amount" by 100 for zarinpal (because it divides the value by 100)
-                //also, since zarinpal supports only integers, convert the amount to an int before creating the plan
-                planParams.put(ZarinpalMonetizationConstants.AMOUNT, (int) (amount * 100));
-                planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, ZarinpalMonetizationConstants.METERED_USAGE);
+                plan.setAmount((int) amount);
+                plan.setUsageType(ZarinpalMonetizationConstants.METERED_USAGE);
             }
-            RequestOptions planRequestOptions = RequestOptions.builder().
-                    setIdempotencyKey(subscriptionPolicy.getUUID()).build();
-            Plan plan = Plan.create(planParams, planRequestOptions);
             String createdPlanId = plan.getId();
-            //put the newly created zarinpal plans and tiers into a map (to add data to the database)
-            if (StringUtils.isBlank(createdPlanId)) {
+            try {
+                zarinpalMonetizationDAO.addMonetizationPlan(plan);
+            } catch (ProductMonetizationException e) {
                 String errorMessage = "Failed to create plan for tier : " + subscriptionPolicy.getPolicyName() +
                         " in " + subscriptionPolicy.getTenantDomain();
                 //throw MonetizationException as it will be logged and handled by the caller
@@ -142,11 +121,6 @@ public class ZarinpalMonetizationImpl implements Monetization {
             //add database record
             zarinpalMonetizationDAO.addMonetizationPlanData(subscriptionPolicy, productId, createdPlanId);
             return true;
-        } catch (ZarinpalException e) {
-            String errorMessage = "Failed to create monetization plan for : " + subscriptionPolicy.getPolicyName() +
-                    " in zarinpal.";
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
         } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Failed to create monetization plan for : " + subscriptionPolicy.getPolicyName() +
                     " in the database.";
@@ -168,7 +142,7 @@ public class ZarinpalMonetizationImpl implements Monetization {
         try {
             planData = zarinpalMonetizationDAO.getPlanData(subscriptionPolicy);
         } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to get zarinpal plan data for policy : " + subscriptionPolicy.getPolicyName() +
+            String errorMessage = "Failed to get stripe plan data for policy : " + subscriptionPolicy.getPolicyName() +
                     " when updating billing plan.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -177,15 +151,6 @@ public class ZarinpalMonetizationImpl implements Monetization {
         String oldPlanId = null;
         String newProductId = null;
         String updatedPlanId = null;
-        try {
-            //read tenant-conf.json and get platform account key
-            Zarinpal.apiKey = getZarinpalPlatformAccountKey(subscriptionPolicy.getTenantDomain());
-        } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
-                    subscriptionPolicy.getTenantDomain() + " when updating billing plan.";
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        }
         if (MapUtils.isNotEmpty(planData)) {
             //product and plan exists for the older plan, so get those values and proceed
             oldProductId = planData.get(ZarinpalMonetizationConstants.PRODUCT_ID);
@@ -193,93 +158,66 @@ public class ZarinpalMonetizationImpl implements Monetization {
         } else {
             //this means updating the monetization plan of tier from a free to commercial.
             //since there is no plan (for old - free tier), we should create a product and plan for the updated tier
-            Map<String, Object> productParams = new HashMap<String, Object>();
-            productParams.put(APIConstants.POLICY_NAME_ELEM,
-                    subscriptionPolicy.getTenantDomain() + "-" + subscriptionPolicy.getPolicyName());
-            productParams.put(APIConstants.TYPE, ZarinpalMonetizationConstants.SERVICE_TYPE);
-            Timestamp timestamp = new Timestamp(new Date().getTime());
-            String productCreationIdempotencyKey = subscriptionPolicy.getTenantDomain() + timestamp.toString();
-            RequestOptions productRequestOptions = RequestOptions.builder().
-                    setIdempotencyKey(productCreationIdempotencyKey).build();
+            Product product = new Product();
+            newProductId = product.getId();
+            product.setName(subscriptionPolicy.getTenantDomain() + "-" + subscriptionPolicy.getPolicyName());
+            product.setType(ZarinpalMonetizationConstants.SERVICE_TYPE);
             try {
-                Product product = Product.create(productParams, productRequestOptions);
-                newProductId = product.getId();
-                if (StringUtils.isBlank(newProductId)) {
-                    String errorMessage = "No zarinpal product was created for tenant (when updating policy) : " +
-                            subscriptionPolicy.getTenantDomain();
-                    //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage);
-                }
-            } catch (ZarinpalException e) {
-                String errorMessage = "Failed to create zarinpal product for tenant (when updating policy) : " +
+                zarinpalMonetizationDAO.addMonetizationProduct(product);
+            } catch (ProductMonetizationException e) {
+                String errorMessage = "Failed to create product for tenant (when updating policy) : " +
                         subscriptionPolicy.getTenantDomain();
                 //throw MonetizationException as it will be logged and handled by the caller
-                throw new MonetizationException(errorMessage, e);
+                throw new MonetizationException(errorMessage);
             }
         }
         //delete old plan if exists
         if (StringUtils.isNotBlank(oldPlanId)) {
             try {
-                Plan.retrieve(oldPlanId).delete();
-            } catch (ZarinpalException e) {
+                zarinpalMonetizationDAO.deleteMonetizationPlan(oldPlanId);
+            } catch (ProductMonetizationException e) {
                 String errorMessage = "Failed to delete old plan for policy : " + subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
-                throw new MonetizationException(errorMessage, e);
+                log.warn(errorMessage + " due to " + e);
             }
         }
         //if updated to a commercial plan, create new plan in billing engine and update DB record
         if (APIConstants.COMMERCIAL_TIER_PLAN.equalsIgnoreCase(subscriptionPolicy.getBillingPlan())) {
-            Map<String, Object> planParams = new HashMap<String, Object>();
-            String currencyType = subscriptionPolicy.getMonetizationPlanProperties().
-                    get(APIConstants.Monetization.CURRENCY).toLowerCase();
-            planParams.put(ZarinpalMonetizationConstants.CURRENCY, currencyType);
+            Plan updatedPlan = new Plan();
+
+            updatedPlan.setCurrency(subscriptionPolicy.getMonetizationPlanProperties().
+                    get(APIConstants.Monetization.CURRENCY).toLowerCase());
+
             if (StringUtils.isNotBlank(oldProductId)) {
-                planParams.put(ZarinpalMonetizationConstants.PRODUCT, oldProductId);
+                updatedPlan.setProductId(oldProductId);
             }
             if (StringUtils.isNotBlank(newProductId)) {
-                planParams.put(ZarinpalMonetizationConstants.PRODUCT, newProductId);
+                updatedPlan.setProductId(newProductId);
             }
-            planParams.put(ZarinpalMonetizationConstants.PRODUCT_NICKNAME, subscriptionPolicy.getPolicyName());
-            planParams.put(ZarinpalMonetizationConstants.INTERVAL, subscriptionPolicy.getMonetizationPlanProperties().
+            updatedPlan.setProductNickname(subscriptionPolicy.getPolicyName());
+            updatedPlan.setInterval(subscriptionPolicy.getMonetizationPlanProperties().
                     get(APIConstants.Monetization.BILLING_CYCLE));
 
             if (APIConstants.Monetization.FIXED_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
                 float amount = Float.parseFloat(subscriptionPolicy.getMonetizationPlanProperties().
                         get(APIConstants.Monetization.FIXED_PRICE));
-                //need to multiply the input for "amount" by 100 for zarinpal (because it divides the value by 100)
-                //also, since zarinpal supports only integers, convert the amount to an int before creating the plan
-                planParams.put(ZarinpalMonetizationConstants.AMOUNT, (int) (amount * 100));
-                planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, ZarinpalMonetizationConstants.LICENSED_USAGE);
+                updatedPlan.setAmount((int) amount);
+                updatedPlan.setUsageType(ZarinpalMonetizationConstants.LICENSED_USAGE);
             }
             if (ZarinpalMonetizationConstants.DYNAMIC_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
                 float amount = Float.parseFloat(subscriptionPolicy.getMonetizationPlanProperties().
                         get(APIConstants.Monetization.PRICE_PER_REQUEST));
-                //need to multiply the input for "amount" by 100 for zarinpal (because it divides the value by 100)
-                //also, since zarinpal supports only integers, convert the amount to an int before creating the plan
-                planParams.put(ZarinpalMonetizationConstants.AMOUNT, (int) (amount * 100));
-                planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, ZarinpalMonetizationConstants.METERED_USAGE);
+                updatedPlan.setAmount((int) amount);
+                updatedPlan.setUsageType(ZarinpalMonetizationConstants.METERED_USAGE);
             }
-            Plan updatedPlan = null;
             try {
-                updatedPlan = Plan.create(planParams);
-            } catch (ZarinpalException e) {
-                String errorMessage = "Failed to create zarinpal plan for tier : " + subscriptionPolicy.getPolicyName();
+                zarinpalMonetizationDAO.addMonetizationPlan(updatedPlan);
+            } catch (ProductMonetizationException e) {
+                String errorMessage = "Failed to create plan for tier : " + subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage, e);
             }
-            if (updatedPlan != null) {
-                updatedPlanId = updatedPlan.getId();
-            } else {
-                String errorMessage = "Failed to create plan for policy update : " + subscriptionPolicy.getPolicyName();
-                //throw MonetizationException as it will be logged and handled by the caller
-                throw new MonetizationException(errorMessage);
-            }
-            if (StringUtils.isBlank(updatedPlanId)) {
-                String errorMessage = "Failed to update zarinpal plan for tier : " + subscriptionPolicy.getPolicyName() +
-                        " in " + subscriptionPolicy.getTenantDomain();
-                //throw MonetizationException as it will be logged and handled by the caller
-                throw new MonetizationException(errorMessage);
-            }
+            updatedPlanId = updatedPlan.getId();
         } else if (APIConstants.BILLING_PLAN_FREE.equalsIgnoreCase(subscriptionPolicy.getBillingPlan())) {
             try {
                 //If updated to a free plan (from a commercial plan), no need to create any plan in the billing engine
@@ -287,10 +225,10 @@ public class ZarinpalMonetizationImpl implements Monetization {
                 zarinpalMonetizationDAO.deleteMonetizationPlanData(subscriptionPolicy);
                 //Remove old artifacts in the billing engine (if any)
                 if (StringUtils.isNotBlank(oldProductId)) {
-                    Product.retrieve(oldProductId).delete();
+                    zarinpalMonetizationDAO.deleteMonetizationProduct(oldProductId);
                 }
-            } catch (ZarinpalException e) {
-                String errorMessage = "Failed to delete old zarinpal product for : " + subscriptionPolicy.getPolicyName();
+            } catch (ProductMonetizationException e) {
+                String errorMessage = "Failed to delete old product for : " + subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage, e);
             } catch (ZarinpalMonetizationException e) {
@@ -332,7 +270,7 @@ public class ZarinpalMonetizationImpl implements Monetization {
         try {
             planData = zarinpalMonetizationDAO.getPlanData(subscriptionPolicy);
         } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to get zarinpal plan data for policy : " + subscriptionPolicy.getPolicyName() +
+            String errorMessage = "Failed to get plan data for policy : " + subscriptionPolicy.getPolicyName() +
                     " when deleting billing plan.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -343,21 +281,13 @@ public class ZarinpalMonetizationImpl implements Monetization {
         }
         String productId = planData.get(ZarinpalMonetizationConstants.PRODUCT_ID);
         String planId = planData.get(ZarinpalMonetizationConstants.PLAN_ID);
-        try {
-            //read tenant-conf.json and get platform account key
-            Zarinpal.apiKey = getZarinpalPlatformAccountKey(subscriptionPolicy.getTenantDomain());
-        } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
-                    subscriptionPolicy.getTenantDomain() + " when deleting billing plan.";
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        }
+
         if (StringUtils.isNotBlank(planId)) {
             try {
-                Plan.retrieve(planId).delete();
-                Product.retrieve(productId).delete();
+                zarinpalMonetizationDAO.deleteMonetizationPlan(planId);
+                zarinpalMonetizationDAO.deleteMonetizationProduct(productId);
                 zarinpalMonetizationDAO.deleteMonetizationPlanData(subscriptionPolicy);
-            } catch (ZarinpalException e) {
+            } catch (ProductMonetizationException e) {
                 String errorMessage = "Failed to delete billing plan resources of : " + subscriptionPolicy.getPolicyName();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage, e);
@@ -383,54 +313,24 @@ public class ZarinpalMonetizationImpl implements Monetization {
     public boolean enableMonetization(String tenantDomain, API api, Map<String, String> monetizationProperties)
             throws MonetizationException {
 
-        String platformAccountKey = null;
-        try {
-            //read tenant conf and get platform account key
-            platformAccountKey = getZarinpalPlatformAccountKey(tenantDomain);
-        } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
-                    tenantDomain + " when enabling monetization for : " + api.getId().getApiName();
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        }
-        String connectedAccountKey;
-        //get api publisher's zarinpal key (i.e - connected account key) from monetization properties in request payload
-        if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
-            connectedAccountKey = monetizationProperties.get
-                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
-            if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Connected account zarinpal key was not found for : " + api.getId().getApiName();
-                //throw MonetizationException as it will be logged and handled by the caller
-                throw new MonetizationException(errorMessage);
-            }
-        } else {
-            String errorMessage = "Zarinpal key of the connected account is empty.";
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage);
-        }
         String apiName = api.getId().getApiName();
         String apiVersion = api.getId().getVersion();
         String apiProvider = api.getId().getProviderName();
         try {
-            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getId(), null);
+            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getId(), APIMgtDBUtil.getConnection());
             String billingProductIdForApi = getBillingProductIdForApi(apiId);
             //create billing engine product if it does not exist
             if (StringUtils.isEmpty(billingProductIdForApi)) {
-                Zarinpal.apiKey = platformAccountKey;
-                Map<String, Object> productParams = new HashMap<String, Object>();
-                String zarinpalProductName = apiName + "-" + apiVersion + "-" + apiProvider;
-                productParams.put(APIConstants.POLICY_NAME_ELEM, zarinpalProductName);
-                productParams.put(APIConstants.TYPE, ZarinpalMonetizationConstants.SERVICE_TYPE);
-                RequestOptions productRequestOptions = RequestOptions.builder().setZarinpalAccount(
-                        connectedAccountKey).build();
+                Product product = new Product();
+                product.setName(apiName + "-" + apiVersion + "-" + apiProvider);
+                product.setType(ZarinpalMonetizationConstants.SERVICE_TYPE);
                 try {
-                    Product product = Product.create(productParams, productRequestOptions);
+                    zarinpalMonetizationDAO.addMonetizationProduct(product);
                     billingProductIdForApi = product.getId();
-                } catch (ZarinpalException e) {
-                    String errorMessage = "Unable to create product in billing engine for : " + apiName;
+                } catch (ProductMonetizationException e) {
+                    String errorMessage = "Unable to create product for : " + apiName;
                     //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage, e);
+                    throw new MonetizationException(errorMessage);
                 }
             }
             Map<String, String> tierPlanMap = new HashMap<String, String>();
@@ -441,7 +341,7 @@ public class ZarinpalMonetizationImpl implements Monetization {
                     if (StringUtils.isBlank(billingPlanId)) {
                         int tenantId = PrivilegedCarbonContext.getThreadLocalCarbonContext().getTenantId();
                         String createdPlanId = createBillingPlanForCommercialTier(currentTier, tenantId,
-                                platformAccountKey, connectedAccountKey, billingProductIdForApi);
+                                billingProductIdForApi);
                         if (StringUtils.isNotBlank(createdPlanId)) {
                             log.debug("Billing plan : " + createdPlanId + " successfully created for : " +
                                     currentTier.getName());
@@ -463,8 +363,11 @@ public class ZarinpalMonetizationImpl implements Monetization {
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
         } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to create products and plans in zarinpal for : " + apiName;
+            String errorMessage = "Failed to create products and plans for : " + apiName;
             //throw MonetizationException as it will be logged and handled by the caller
+            throw new MonetizationException(errorMessage, e);
+        } catch (SQLException e) {
+            String errorMessage = "Error while retrieving the API ID";
             throw new MonetizationException(errorMessage, e);
         }
         return true;
@@ -481,36 +384,9 @@ public class ZarinpalMonetizationImpl implements Monetization {
      */
     public boolean disableMonetization(String tenantDomain, API api, Map<String, String> monetizationProperties) throws MonetizationException {
 
-        String platformAccountKey = null;
-        try {
-            //read tenant conf and get platform account key
-            platformAccountKey = getZarinpalPlatformAccountKey(tenantDomain);
-        } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
-                    tenantDomain + " when disabling monetization for : " + api.getId().getApiName();
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        }
-        String connectedAccountKey = StringUtils.EMPTY;
-        //get api publisher's zarinpal key (i.e - connected account key) from monetization properties in request payload
-        if (MapUtils.isNotEmpty(monetizationProperties) &&
-                monetizationProperties.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
-            connectedAccountKey = monetizationProperties.get
-                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
-            if (StringUtils.isBlank(connectedAccountKey)) {
-                String errorMessage = "Billing engine connected account key was not found for : " +
-                        api.getId().getApiName();
-                //throw MonetizationException as it will be logged and handled by the caller
-                throw new MonetizationException(errorMessage);
-            }
-        } else {
-            String errorMessage = "Zarinpal key of the connected account is empty for tenant : " + tenantDomain;
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage);
-        }
         try {
             String apiName = api.getId().getApiName();
-            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getId(), null);
+            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getId(), APIMgtDBUtil.getConnection());
             String billingProductIdForApi = getBillingProductIdForApi(apiId);
             //no product in the billing engine, so return
             if (StringUtils.isBlank(billingProductIdForApi)) {
@@ -518,34 +394,33 @@ public class ZarinpalMonetizationImpl implements Monetization {
             }
             Map<String, String> tierToBillingEnginePlanMap = zarinpalMonetizationDAO.getTierToBillingEnginePlanMapping
                     (apiId, billingProductIdForApi);
-            Zarinpal.apiKey = platformAccountKey;
-            RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
-
             for (Map.Entry<String, String> entry : tierToBillingEnginePlanMap.entrySet()) {
                 String planId = entry.getValue();
-                Plan plan = Plan.retrieve(planId, requestOptions);
-                plan.delete(requestOptions);
+                zarinpalMonetizationDAO.deleteMonetizationPlan(planId);
                 log.debug("Successfully deleted billing plan : " + planId + " of tier : " + entry.getKey());
             }
             //after deleting all the associated plans, then delete the product
-            Product product = Product.retrieve(billingProductIdForApi, requestOptions);
-            product.delete(requestOptions);
+            zarinpalMonetizationDAO.deleteMonetizationProduct(billingProductIdForApi);
             log.debug("Successfully deleted billing product : " + billingProductIdForApi + " of : " + apiName);
             //after deleting plans and the product, clean the database records
             zarinpalMonetizationDAO.deleteMonetizationData(apiId);
             log.debug("Successfully deleted monetization database records for : " + apiName);
-        } catch (ZarinpalException e) {
+        } catch (ProductMonetizationException e) {
             String errorMessage = "Failed to delete products and plans in the billing engine.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
         } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to fetch database records when disabling monetization for : " + api.getId().getApiName();
+            String errorMessage = "Failed to fetch database records when disabling monetization for : " +
+                    api.getId().getApiName();
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
         } catch (APIManagementException e) {
             String errorMessage = "Failed to get ID from database for : " + api.getId().getApiName() +
                     " when disabling monetization.";
             //throw MonetizationException as it will be logged and handled by the caller
+            throw new MonetizationException(errorMessage, e);
+        } catch (SQLException e) {
+            String errorMessage = "Error while retrieving the API ID";
             throw new MonetizationException(errorMessage, e);
         }
         return true;
@@ -562,7 +437,8 @@ public class ZarinpalMonetizationImpl implements Monetization {
 
         try {
             String apiName = api.getId().getApiName();
-            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getId(), null);
+            Connection con = APIMgtDBUtil.getConnection();
+            int apiId = ApiMgtDAO.getInstance().getAPIID(api.getId(), con);
             //get billing engine product ID for that API
             String billingProductIdForApi = getBillingProductIdForApi(apiId);
             if (StringUtils.isEmpty(billingProductIdForApi)) {
@@ -580,6 +456,9 @@ public class ZarinpalMonetizationImpl implements Monetization {
                     " when getting tier to billing engine plan mapping.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
+        } catch (SQLException e) {
+            String errorMessage = "Error while retrieving the API ID";
+            throw new MonetizationException(errorMessage, e);
         }
     }
 
@@ -593,174 +472,286 @@ public class ZarinpalMonetizationImpl implements Monetization {
     public boolean publishMonetizationUsageRecords(MonetizationUsagePublishInfo lastPublishInfo)
             throws MonetizationException {
 
-        String apiName = null;
-        String apiVersion = null;
-        String tenantDomain = null;
-        int applicationId;
-        String apiProvider = null;
-        Long requestCount = 0L;
-        Long currentTimestamp;
-        int flag = 0;
-        int counter = 0;
-        JSONObject jsonObj = null;
-        APIAdmin apiAdmin = new APIAdminImpl();
+//        String apiName = null;
+//        String apiVersion = null;
+//        String tenantDomain = null;
+//        String applicationName = null;
+//        String applicationOwner = null;
+//        int applicationId;
+//        String apiProvider = null;
+//        Long requestCount = 0L;
+//        Long currentTimestamp;
+//        int flag = 0;
+//        int counter = 0;
+//        APIAdmin apiAdmin = new APIAdminImpl();
+//
+//        Date dateobj = new Date();
+//        SimpleDateFormat simpleDateFormat = new SimpleDateFormat(ZarinpalMonetizationConstants.TIME_FORMAT);
+//        simpleDateFormat.setTimeZone(TimeZone.getTimeZone(ZarinpalMonetizationConstants.TIME_ZONE));
+//        String toDate = simpleDateFormat.format(dateobj);
+//        //used for zarinpal recording
+//        currentTimestamp = getTimestamp(toDate);
+//        //The implementation will be improved to use offset date time to get the time zone based on user input
+//        String formattedToDate = toDate.concat(ZarinpalMonetizationConstants.TIMEZONE_FORMAT);
+//        String fromDate = simpleDateFormat.format(
+//                new java.util.Date(lastPublishInfo.getLastPublishTime()));
+//        //The implementation will be improved to use offset date time to get the time zone based on user input
+//        String formattedFromDate = fromDate.concat(ZarinpalMonetizationConstants.TIMEZONE_FORMAT);
+//        LinkedTreeMap<String, ArrayList<LinkedTreeMap<String, String>>> data = getUsageData(formattedFromDate,
+//                formattedToDate);
+//        if (data.get(ZarinpalMonetizationConstants.GET_USAGE_BY_APPLICATION).isEmpty()) {
+//            try {
+//                log.debug("No API Usage retrieved for the given period of time");
+//                //last publish time will be updated as successful since there was no usage retrieved.
+//                lastPublishInfo.setLastPublishTime(currentTimestamp);
+//                lastPublishInfo.setState(ZarinpalMonetizationConstants.COMPLETED);
+//                lastPublishInfo.setStatus(ZarinpalMonetizationConstants.SUCCESSFULL);
+//                apiAdmin.updateMonetizationUsagePublishInfo(lastPublishInfo);
+//            } catch (APIManagementException ex) {
+//                String msg = "Failed to update last published time ";
+//                //throw MonetizationException as it will be logged and handled by the caller
+//                throw new MonetizationException(msg, ex);
+//            }
+//            return true;
+//        }
+//        for (Map.Entry<String, ArrayList<LinkedTreeMap<String, String>>> entry : data.entrySet()) {
+//            String key = entry.getKey();
+//            ArrayList<LinkedTreeMap<String, String>> apiUsageDataCollection = entry.getValue();
+//            for (LinkedTreeMap<String, String> apiUsageData : apiUsageDataCollection) {
+//                apiName = apiUsageData.get(ZarinpalMonetizationConstants.API_NAME);
+//                apiVersion = apiUsageData.get(ZarinpalMonetizationConstants.API_VERSION);
+//                tenantDomain = apiUsageData.get(ZarinpalMonetizationConstants.TENANT_DOMAIN);
+//                applicationName = apiUsageData.get(ZarinpalMonetizationConstants.APPLICATION_NAME);
+//                applicationOwner = apiUsageData.get(ZarinpalMonetizationConstants.APPLICATION_OWNER);
+//                try {
+//                    applicationId = apiMgtDAO.getApplicationId(applicationName, applicationOwner);
+//                    apiProvider = apiMgtDAO.getAPIProviderByNameAndVersion(apiName, apiVersion, tenantDomain);
+//                } catch (APIManagementException e) {
+//                    throw new MonetizationException("Error while retrieving Application Id for application " +
+//                            applicationName, e);
+//                }
+//                requestCount = Long.parseLong(apiUsageData.get(ZarinpalMonetizationConstants.COUNT));
+//                try {
+//                    //get the billing engine subscription details
+//                    MonetizedSubscription subscription = zarinpalMonetizationDAO.getMonetizedSubscription(apiName,
+//                            apiVersion, apiProvider, applicationId, tenantDomain);
+////                    if (subscription.getSubscriptionId() != null) {
+////                        try {
+////                            //start the tenant flow to get the platform key
+////                            PrivilegedCarbonContext.startTenantFlow();
+////                            PrivilegedCarbonContext.getThreadLocalCarbonContext().
+////                                    setTenantDomain(tenantDomain, true);
+////                            //read tenant conf and get platform account key
+////                            Stripe.apiKey = getZarinpalMerchantID(tenantDomain);
+////                        } catch (ZarinpalMonetizationException e) {
+////                            String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
+////                                    tenantDomain + " when disabling monetization for : " + apiName;
+////                            //throw MonetizationException as it will be logged and handled by the caller
+////                            throw new MonetizationException(errorMessage, e);
+////                        } finally {
+////                            PrivilegedCarbonContext.endTenantFlow();
+////                        }
+////                    }
+////                    String connectedAccountKey;
+////                    try {
+////                        PrivilegedCarbonContext.startTenantFlow();
+////                        PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantDomain(
+////                                tenantDomain, true);
+////                        apiProvider = APIUtil.replaceEmailDomain(apiProvider);
+////                        APIIdentifier identifier = new APIIdentifier(apiProvider, apiName, apiVersion);
+////                        APIProvider apiProvider1 = APIManagerFactory.getInstance().getAPIProvider(apiProvider);
+////                        API api = apiProvider1.getAPI(identifier);
+////                        Map<String, String> monetizationProperties = new Gson().fromJson(
+////                                api.getMonetizationProperties().toString(), HashMap.class);
+////                        //get api publisher's zarinpal key (i.e - connected account key) from monetization
+////                        // properties in request payload
+////                        if (MapUtils.isNotEmpty(monetizationProperties) &&
+////                                monetizationProperties.containsKey(
+////                                        ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+////                            connectedAccountKey = monetizationProperties.get
+////                                    (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
+////                            if (StringUtils.isBlank(connectedAccountKey)) {
+////                                String errorMessage = "Connected account zarinpal key was not found for : "
+////                                        + api.getId().getApiName();
+////                                //throw MonetizationException as it will be logged and handled by the caller
+////                                throw new MonetizationException(errorMessage);
+////                            }
+////                        } else {
+////                            String errorMessage = "Zarinpal key of the connected account is empty.";
+////                            //throw MonetizationException as it will be logged and handled by the caller
+////                            throw new MonetizationException(errorMessage);
+////                        }
+////                    } catch (APIManagementException e) {
+////                        String errorMessage = "Failed to get the Zarinpal key of the connected account from "
+////                                + "the : " + apiName;
+////                        //throw MonetizationException as it will be logged and handled by the caller
+////                        throw new MonetizationException(errorMessage, e);
+////                    } finally {
+////                        PrivilegedCarbonContext.endTenantFlow();
+////                    }
+//                    Plan plan = zarinpalMonetizationDAO.getMonetizationPlan(subscription.getPlanId());
+//                    RequestOptions subRequestOptions = RequestOptions.builder().
+//                            setStripeAccount(connectedAccountKey).build();
+//                     sub = Subscription.retrieve(subscription.getSubscriptionId(),
+//                            subRequestOptions);
+//                    //get the first subscription item from the array
+//                    subscriptionItem = sub.getItems().getData().get(0);
+//                    //check whether the billing plan is Usage Based.
+//                    if (plan.getUsageType().equals(
+//                            ZarinpalMonetizationConstants.METERED_PLAN)) {
+//                        flag++;
+//                        Map<String, Object> usageRecordParams = new HashMap<>();
+//                        usageRecordParams.put(ZarinpalMonetizationConstants.QUANTITY, requestCount);
+//                        //provide the timesatmp in second format
+//                        usageRecordParams.put(ZarinpalMonetizationConstants.TIMESTAMP,
+//                                currentTimestamp / 1000);
+//                        usageRecordParams.put(ZarinpalMonetizationConstants.ACTION,
+//                                ZarinpalMonetizationConstants.INCREMENT);
+//                        RequestOptions usageRequestOptions = RequestOptions.builder().
+//                                setStripeAccount(connectedAccountKey).setIdempotencyKey(sub.getId()
+//                                + lastPublishInfo.getLastPublishTime() + requestCount).build();
+//                        UsageRecord usageRecord = UsageRecord.createOnSubscriptionItem(
+//                                sub.getId(), usageRecordParams, usageRequestOptions);
+//                        //checks whether the usage record is published successfully
+//                        if (usageRecord.getId() != null) {
+//                            counter++;
+//                            if (log.isDebugEnabled()) {
+//                                String msg = "Usage for " + apiName + " by Application with ID " + applicationId
+//                                        + " is successfully published to Zarinpal";
+//                                log.debug(msg);
+//                            }
+//                        }
+//                    }
+//                } catch (ZarinpalMonetizationException e) {
+//                    String errorMessage = "Unable to Publish usage Record to Billing Engine";
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage, e);
+//                } catch (ProductMonetizationException e) {
+//                    String errorMessage = "Unable to Publish usage Record";
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage, e);
+//                }
+//            }
+//        }
+//
+//        //Flag equals counter when all the records are published successfully
+//        if (flag == counter) {
+//            try {
+//                //last publish time will be updated only if all the records are successful
+//                lastPublishInfo.setLastPublishTime(currentTimestamp);
+//                lastPublishInfo.setState(ZarinpalMonetizationConstants.COMPLETED);
+//                lastPublishInfo.setStatus(ZarinpalMonetizationConstants.SUCCESSFULL);
+//                apiAdmin.updateMonetizationUsagePublishInfo(lastPublishInfo);
+//            } catch (APIManagementException ex) {
+//                String msg = "Failed to update last published time ";
+//                //throw MonetizationException as it will be logged and handled by the caller
+//                throw new MonetizationException(msg, ex);
+//            }
+//            return true;
+//        }
+//        try {
+//            lastPublishInfo.setState(ZarinpalMonetizationConstants.COMPLETED);
+//            lastPublishInfo.setStatus(ZarinpalMonetizationConstants.UNSUCCESSFULL);
+//            apiAdmin.updateMonetizationUsagePublishInfo(lastPublishInfo);
+//        } catch (APIManagementException ex) {
+//            String msg = "Failed to update last published time ";
+//            //throw MonetizationException as it will be logged and handled by the caller
+//            throw new MonetizationException(msg, ex);
+//        }
+//        return false;
+        return true;
+    }
 
-        DateFormat df = new SimpleDateFormat(ZarinpalMonetizationConstants.TIME_FORMAT);
-        Date dateobj = new Date();
-        //get the time in UTC format
-        df.setTimeZone(TimeZone.getTimeZone(ZarinpalMonetizationConstants.TIME_ZONE));
-        String currentDate = df.format(dateobj);
-        currentTimestamp = getTimestamp(currentDate);
-        try {
-            //get the data from SP rest queries as a json object
-            jsonObj = APIUtil.getUsageCountForMonetization(lastPublishInfo.getLastPublishTime(),
-                    currentTimestamp);
-        } catch (APIManagementException e) {
-            String errorMessage = "Failed to get the usage count for monetization.";
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        }
-        log.info("Usage record publisher is running.");
-        SubscriptionItem subscriptionItem = null;
-        try {
-            if (jsonObj != null) {
-                JSONArray jArray = (JSONArray) jsonObj.get(APIConstants.Analytics.RECORDS_DELIMITER);
-                for (Object record : jArray) {
-                    JSONArray recordArray = (JSONArray) record;
-                    // should return the 6 paramters derived below
-                    if (recordArray.size() == 6) {
-                        apiName = (String) recordArray.get(0);
-                        apiVersion = (String) recordArray.get(1);
-                        apiProvider = (String) recordArray.get(2);
-                        tenantDomain = (String) recordArray.get(3);
-                        applicationId = Integer.parseInt((String) recordArray.get(4));
-                        requestCount = (Long) recordArray.get(5);
-                        //get the billing engine subscription details
-                        MonetizedSubscription subscription = zarinpalMonetizationDAO.getMonetizedSubscription(apiName,
-                                apiVersion, apiProvider, applicationId, tenantDomain);
-                        if (subscription.getSubscriptionId() != null) {
-                            try {
-                                //start the tenant flow to get the platform key
-                                PrivilegedCarbonContext.startTenantFlow();
-                                PrivilegedCarbonContext.getThreadLocalCarbonContext().
-                                        setTenantDomain(tenantDomain, true);
-                                //read tenant conf and get platform account key
-                                Zarinpal.apiKey = getZarinpalPlatformAccountKey(tenantDomain);
-                            } catch (ZarinpalMonetizationException e) {
-                                String errorMessage = "Failed to get Zarinpal platform account key for tenant :  " +
-                                        tenantDomain + " when disabling monetization for : " + apiName;
-                                //throw MonetizationException as it will be logged and handled by the caller
-                                throw new MonetizationException(errorMessage, e);
-                            } finally {
-                                PrivilegedCarbonContext.endTenantFlow();
-                            }
-                            String connectedAccountKey;
-                            try {
-                                PrivilegedCarbonContext.startTenantFlow();
-                                PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantDomain(
-                                        tenantDomain, true);
-                                apiProvider = APIUtil.replaceEmailDomain(apiProvider);
-                                APIIdentifier identifier = new APIIdentifier(apiProvider, apiName, apiVersion);
-                                APIProvider apiProvider1 = APIManagerFactory.getInstance().getAPIProvider(apiProvider);
-                                API api = apiProvider1.getAPI(identifier);
-                                Map<String, String> monetizationProperties = new Gson().fromJson(
-                                        api.getMonetizationProperties().toString(), HashMap.class);
-                                //get api publisher's zarinpal key (i.e - connected account key) from monetization
-                                // properties in request payload
-                                if (MapUtils.isNotEmpty(monetizationProperties) &&
-                                        monetizationProperties.containsKey(
-                                                ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
-                                    connectedAccountKey = monetizationProperties.get
-                                            (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY);
-                                    if (StringUtils.isBlank(connectedAccountKey)) {
-                                        String errorMessage = "Connected account zarinpal key was not found for : "
-                                                + api.getId().getApiName();
-                                        //throw MonetizationException as it will be logged and handled by the caller
-                                        throw new MonetizationException(errorMessage);
-                                    }
-                                } else {
-                                    String errorMessage = "Zarinpal key of the connected account is empty.";
-                                    //throw MonetizationException as it will be logged and handled by the caller
-                                    throw new MonetizationException(errorMessage);
-                                }
-                            } catch (APIManagementException e) {
-                                String errorMessage = "Failed to get the Zarinpal key of the connected account from "
-                                        + "the : " + apiName;
-                                //throw MonetizationException as it will be logged and handled by the caller
-                                throw new MonetizationException(errorMessage, e);
-                            } finally {
-                                PrivilegedCarbonContext.endTenantFlow();
-                            }
-                            RequestOptions subRequestOptions = RequestOptions.builder().
-                                    setZarinpalAccount(connectedAccountKey).build();
-                            Subscription sub = Subscription.retrieve(subscription.getSubscriptionId(),
-                                    subRequestOptions);
-                            //get the first subscription item from the array
-                            subscriptionItem = sub.getItems().getData().get(0);
-                            //check whether the billing plan is Usage Based.
-                            if (subscriptionItem.getPlan().getUsageType().equals(
-                                    ZarinpalMonetizationConstants.METERED_PLAN)) {
-                                flag++;
-                                Map<String, Object> usageRecordParams = new HashMap<String, Object>();
-                                usageRecordParams.put(ZarinpalMonetizationConstants.QUANTITY, requestCount);
-                                //provide the timesatmp in second format
-                                usageRecordParams.put(ZarinpalMonetizationConstants.TIMESTAMP,
-                                        getTimestamp(currentDate) / 1000);
-                                usageRecordParams.put(ZarinpalMonetizationConstants.ACTION,
-                                        ZarinpalMonetizationConstants.INCREMENT);
-                                RequestOptions usageRequestOptions = RequestOptions.builder().
-                                        setZarinpalAccount(connectedAccountKey).setIdempotencyKey(subscriptionItem.getId()
-                                        + lastPublishInfo.getLastPublishTime() + requestCount).build();
-                                UsageRecord usageRecord = UsageRecord.createOnSubscriptionItem(
-                                        subscriptionItem.getId(), usageRecordParams, usageRequestOptions);
-                                //checks whether the usage record is published successfully
-                                if (usageRecord.getId() != null) {
-                                    counter++;
-                                    if (log.isDebugEnabled()) {
-                                        String msg = "Usage for " + apiName + " by Application with ID " + applicationId
-                                                + " is successfully published to Zarinpal";
-                                        log.info(msg);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Unable to Publish usage Record to Billing Engine";
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        } catch (ZarinpalException e) {
-            String errorMessage = "Unable to Publish usage Record";
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        }
-        // Flag equals counter when all the records are published successfully
-        if (flag == counter) {
-            try {
-                //last publish time will be updated only if all the records are successfull
-                lastPublishInfo.setLastPublishTime(currentTimestamp);
-                lastPublishInfo.setState(ZarinpalMonetizationConstants.COMPLETED);
-                lastPublishInfo.setStatus(ZarinpalMonetizationConstants.SUCCESSFULL);
-                apiAdmin.updateMonetizationUsagePublishInfo(lastPublishInfo);
-            } catch (APIManagementException ex) {
-                String msg = "Failed to update last published time ";
-                //throw MonetizationException as it will be logged and handled by the caller
-                throw new MonetizationException(msg, ex);
-            }
-            return true;
-        }
-        try {
-            lastPublishInfo.setState(ZarinpalMonetizationConstants.COMPLETED);
-            lastPublishInfo.setStatus(ZarinpalMonetizationConstants.UNSUCCESSFULL);
-            apiAdmin.updateMonetizationUsagePublishInfo(lastPublishInfo);
-        } catch (APIManagementException ex) {
-            String msg = "Failed to update last published time ";
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(msg, ex);
-        }
-        return false;
+    /**
+     * Get usage data for all monetized APIs from Choreo Analytics between the given time.
+     *
+     * @param formattedFromDate The starting date of the time range
+     * @param formattedToDate   The ending date of the time range
+     * @return usage data of monetized APIs
+     * @throws MonetizationException if failed to get the usage for the APIs
+     */
+    LinkedTreeMap<String, ArrayList<LinkedTreeMap<String, String>>> getUsageData(
+            String formattedFromDate, String formattedToDate) throws MonetizationException {
+
+//        String accessToken = null;
+//        String queryApiEndpoint = null;
+//        String graphQLquery = "query($timeFilter: TimeFilter!, " +
+//                "$successAPIUsageByAppFilter: SuccessAPIUsageByAppFilter!) " +
+//                "{getSuccessAPIsUsageByApplications(timeFilter: $timeFilter, " +
+//                "successAPIUsageByAppFilter: $successAPIUsageByAppFilter) { apiId apiName apiVersion " +
+//                "apiCreatorTenantDomain applicationId applicationName applicationOwner count}}";
+//
+//        if (config == null) {
+//            // Retrieve the access token from api manager configurations.
+//            config = ServiceReferenceHolder.getInstance().getAPIManagerConfigurationService().
+//                    getAPIManagerConfiguration();
+//        }
+//        queryApiEndpoint = config.getFirstProperty(
+//                ZarinpalMonetizationConstants.ANALYTICS_QUERY_API_ENDPOINT_PROP);
+//        if (StringUtils.isEmpty(queryApiEndpoint)) {
+//            throw new MonetizationException("Endpoint for the the analytics query api is not configured");
+//        }
+//        accessToken = config.getFirstProperty(ZarinpalMonetizationConstants.ANALYTICS_ACCESS_TOKEN_PROP);
+//        if (StringUtils.isEmpty(accessToken)) {
+//            throw new MonetizationException("Access token for the the analytics query api is not configured");
+//        }
+//
+//        JSONObject timeFilter = new JSONObject();
+//        timeFilter.put(ZarinpalMonetizationConstants.FROM, formattedFromDate);
+//        timeFilter.put(ZarinpalMonetizationConstants.TO, formattedToDate);
+//        JSONArray monetizedAPIIds = new JSONArray();
+//        JSONArray tenantDomains = new JSONArray();
+//
+//        try {
+//            Properties properties = new Properties();
+//            properties.put(APIConstants.ALLOW_MULTIPLE_STATUS, APIUtil.isAllowDisplayAPIsWithMultipleStatus());
+//            apiPersistenceInstance = PersistenceManager.getPersistenceInstance(properties);
+//            List<Tenant> tenants = APIUtil.getAllTenantsWithSuperTenant();
+//            for (Tenant tenant : tenants) {
+//                tenantDomains.add(tenant.getDomain());
+//                try {
+//                    PrivilegedCarbonContext.startTenantFlow();
+//                    PrivilegedCarbonContext.getThreadLocalCarbonContext().setTenantDomain(
+//                            tenant.getDomain(), true);
+//                    APIProvider apiProviderNew = RestApiCommonUtil.getProvider(APIUtil.getAdminUsername());
+//                    List<API> allowedAPIs = apiProviderNew.getAllAPIs();
+//                    Organization org = new Organization(tenant.getDomain());
+//                    for (API api : allowedAPIs) {
+//                        PublisherAPI publisherAPI = null;
+//                        try {
+//                            publisherAPI = apiPersistenceInstance.getPublisherAPI(org, api.getUUID());
+//                            if (publisherAPI.isMonetizationEnabled()) {
+//                                monetizedAPIIds.add(api.getUUID());
+//                            }
+//                        } catch (APIPersistenceException e) {
+//                            throw new MonetizationException("Failed to retrieve the API of UUID: " + api.getUUID(), e);
+//                        }
+//                    }
+//                } catch (APIManagementException e) {
+//                    throw new MonetizationException("Error while retrieving the Ids of Monetized APIs");
+//                }
+//            }
+//        } catch (UserStoreException e) {
+//            throw new MonetizationException("Error while retrieving the tenants", e);
+//        }
+//        if (monetizedAPIIds.size() > 0) {
+//            JSONObject successAPIUsageByAppFilter = new JSONObject();
+//            successAPIUsageByAppFilter.put(ZarinpalMonetizationConstants.API_ID_COL, monetizedAPIIds);
+//            successAPIUsageByAppFilter.put(ZarinpalMonetizationConstants.TENANT_DOMAIN_COL, tenantDomains);
+//            JSONObject variables = new JSONObject();
+//            variables.put(ZarinpalMonetizationConstants.TIME_FILTER, timeFilter);
+//            variables.put(ZarinpalMonetizationConstants.API_USAGE_BY_APP_FILTER, successAPIUsageByAppFilter);
+//            GraphQLClient graphQLCliet =
+//                    Feign.builder().client(new OkHttpClient()).encoder(new GsonEncoder()).decoder(new GsonDecoder())
+//                            .logger(new Slf4jLogger()).requestInterceptor(new QueyAPIAccessTokenInterceptor(accessToken))
+//                            .target(GraphQLClient.class, queryApiEndpoint);
+//            GraphqlQueryModel queryModel = new GraphqlQueryModel();
+//            queryModel.setQuery(graphQLquery);
+//            queryModel.setVariables(variables);
+//            graphQLResponseClient usageResponse = graphQLCliet.getSuccessAPIsUsageByApplications(queryModel);
+//            return usageResponse.getData();
+//        }
+        return null;
     }
 
     /**
@@ -774,163 +765,172 @@ public class ZarinpalMonetizationImpl implements Monetization {
     public Map<String, String> getCurrentUsageForSubscription(String subscriptionUUID, APIProvider apiProvider)
             throws MonetizationException {
 
-        Map<String, String> billingEngineUsageData = new HashMap<String, String>();
-        String apiName = null;
-        try {
-            SubscribedAPI subscribedAPI = ApiMgtDAO.getInstance().getSubscriptionByUUID(subscriptionUUID);
-            APIIdentifier apiIdentifier = subscribedAPI.getApiId();
-            APIProductIdentifier apiProductIdentifier;
-            API api;
-            APIProduct apiProduct;
-            HashMap monetizationDataMap;
-            int apiId;
-            if (apiIdentifier != null) {
-                api = apiProvider.getAPI(apiIdentifier);
-                apiName = apiIdentifier.getApiName();
-                if (api.getMonetizationProperties() == null) {
-                    String errorMessage = "Monetization properties are empty for : " + apiName;
-                    //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage);
-                }
-                monetizationDataMap = new Gson().fromJson(api.getMonetizationProperties().toString(), HashMap.class);
-                if (MapUtils.isEmpty(monetizationDataMap)) {
-                    String errorMessage = "Monetization data map is empty for : " + apiName;
-                    //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage);
-                }
-                apiId = ApiMgtDAO.getInstance().getAPIID(apiIdentifier, null);
-            } else {
-                apiProductIdentifier = subscribedAPI.getProductId();
-                apiProduct = apiProvider.getAPIProduct(apiProductIdentifier);
-                apiName = apiProductIdentifier.getName();
-                if (apiProduct.getMonetizationProperties() == null) {
-                    String errorMessage = "Monetization properties are empty for : " + apiName;
-                    //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage);
-                }
-                monetizationDataMap = new Gson().fromJson(apiProduct.getMonetizationProperties().toString(), HashMap.class);
-                if (MapUtils.isEmpty(monetizationDataMap)) {
-                    String errorMessage = "Monetization data map is empty for : " + apiName;
-                    //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage);
-                }
-                apiId = ApiMgtDAO.getInstance().getAPIProductId(apiProductIdentifier);
-            }
-            String tenantDomain = PrivilegedCarbonContext.getThreadLocalCarbonContext().getTenantDomain();
-            //get billing engine platform account key
-            String platformAccountKey = getZarinpalPlatformAccountKey(tenantDomain);
-            if (monetizationDataMap.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
-                String connectedAccountKey = monetizationDataMap.get
-                        (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY).toString();
-                if (StringUtils.isBlank(connectedAccountKey)) {
-                    String errorMessage = "Connected account zarinpal key was not found for : " + apiName;
-                    //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage);
-                }
-                Zarinpal.apiKey = platformAccountKey;
-                //create request options to link with the connected account
-                RequestOptions requestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
-                int applicationId = subscribedAPI.getApplication().getId();
-                String billingPlanSubscriptionId = zarinpalMonetizationDAO.getBillingEngineSubscriptionId(apiId, applicationId);
-                Subscription billingEngineSubscription = Subscription.retrieve(billingPlanSubscriptionId, requestOptions);
-                if (billingEngineSubscription == null) {
-                    String errorMessage = "No billing engine subscription was found for : " + apiName;
-                    //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage);
-                }
-                //upcoming invoice is only applicable for metered usage (i.e - dynamic usage)
-                if (!ZarinpalMonetizationConstants.METERED_USAGE.equalsIgnoreCase
-                        (billingEngineSubscription.getPlan().getUsageType())) {
-                    String errorMessage = "Usage type should be set to 'metered' to get the pending bill.";
-                    //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage);
-                }
-                Map<String, Object> invoiceParams = new HashMap<String, Object>();
-                invoiceParams.put("subscription", billingEngineSubscription.getId());
-                //fetch the upcoming invoice
-                Invoice invoice = Invoice.upcoming(invoiceParams, requestOptions);
-                if (invoice == null) {
-                    String errorMessage = "No billing engine subscription was found for : " + apiName;
-                    //throw MonetizationException as it will be logged and handled by the caller
-                    throw new MonetizationException(errorMessage);
-                }
-                SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss z");
-                dateFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
-                //the below parameters are billing engine specific
-                billingEngineUsageData.put("Description", invoice.getDescription());
-                billingEngineUsageData.put("Paid", invoice.getPaid() != null ? invoice.getPaid().toString() : null);
-                billingEngineUsageData.put("Tax", invoice.getTax() != null ?
-                        invoice.getTax().toString() : null);
-                billingEngineUsageData.put("Invoice ID", invoice.getId());
-                billingEngineUsageData.put("Account Name", invoice.getAccountName());
-                billingEngineUsageData.put("Next Payment Attempt", invoice.getNextPaymentAttempt() != null ?
-                        dateFormatter.format(new Date(invoice.getNextPaymentAttempt() * 1000)) : null);
-                billingEngineUsageData.put("Customer Email", invoice.getCustomerEmail());
-                billingEngineUsageData.put("Currency", invoice.getCurrency());
-                billingEngineUsageData.put("Account Country", invoice.getAccountCountry());
-                billingEngineUsageData.put("Amount Remaining", invoice.getAmountRemaining() != null ?
-                        Long.toString(invoice.getAmountRemaining() / 100L) : null);
-                billingEngineUsageData.put("Period End", invoice.getPeriodEnd() != null ?
-                        dateFormatter.format(new Date(invoice.getPeriodEnd() * 1000)) : null);
-                billingEngineUsageData.put("Due Date", invoice.getDueDate() != null ?
-                        dateFormatter.format(new Date(invoice.getDueDate())) : null);
-                billingEngineUsageData.put("Amount Due", invoice.getAmountDue() != null ?
-                        Long.toString(invoice.getAmountDue() / 100L) : null);
-                billingEngineUsageData.put("Total Tax Amounts", invoice.getTotalTaxAmounts() != null ?
-                        invoice.getTotalTaxAmounts().toString() : null);
-                billingEngineUsageData.put("Amount Paid", invoice.getAmountPaid() != null ?
-                        Long.toString(invoice.getAmountPaid() / 100L) : null);
-                billingEngineUsageData.put("Subtotal", invoice.getSubtotal() != null ?
-                        Long.toString(invoice.getSubtotal() / 100L) : null);
-                billingEngineUsageData.put("Total", invoice.getTotal() != null ?
-                        Long.toString(invoice.getTotal() / 100L) : null);
-                billingEngineUsageData.put("Period Start", invoice.getPeriodStart() != null ?
-                        dateFormatter.format(new Date(invoice.getPeriodStart() * 1000)) : null);
+//        Map<String, String> billingEngineUsageData = new HashMap<>();
+//        String apiName = null;
+//        try {
+//            SubscribedAPI subscribedAPI = ApiMgtDAO.getInstance().getSubscriptionByUUID(subscriptionUUID);
+//            APIIdentifier apiIdentifier = subscribedAPI.getApiId();
+//            APIProductIdentifier apiProductIdentifier;
+//            API api;
+//            APIProduct apiProduct;
+//            HashMap monetizationDataMap;
+//            int apiId;
+//            if (apiIdentifier != null) {
+//                api = apiProvider.getAPI(apiIdentifier);
+//                apiName = apiIdentifier.getApiName();
+//                if (api.getMonetizationProperties() == null) {
+//                    String errorMessage = "Monetization properties are empty for : " + apiName;
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage);
+//                }
+//                monetizationDataMap = new Gson().fromJson(api.getMonetizationProperties().toString(), HashMap.class);
+//                if (MapUtils.isEmpty(monetizationDataMap)) {
+//                    String errorMessage = "Monetization data map is empty for : " + apiName;
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage);
+//                }
+//                apiId = ApiMgtDAO.getInstance().getAPIID(apiIdentifier, APIMgtDBUtil.getConnection());
+//            } else {
+//                apiProductIdentifier = subscribedAPI.getProductId();
+//                apiProduct = apiProvider.getAPIProduct(apiProductIdentifier);
+//                apiName = apiProductIdentifier.getName();
+//                if (apiProduct.getMonetizationProperties() == null) {
+//                    String errorMessage = "Monetization properties are empty for : " + apiName;
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage);
+//                }
+//                monetizationDataMap = new Gson().fromJson(apiProduct.getMonetizationProperties().toString(), HashMap.class);
+//                if (MapUtils.isEmpty(monetizationDataMap)) {
+//                    String errorMessage = "Monetization data map is empty for : " + apiName;
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage);
+//                }
+//                apiId = ApiMgtDAO.getInstance().getAPIProductId(apiProductIdentifier);
+//            }
+//            String tenantDomain = PrivilegedCarbonContext.getThreadLocalCarbonContext().getTenantDomain();
+//            //get billing engine platform account key
+//            String platformAccountKey = getZarinpalMerchantID(tenantDomain);
+//            if (monetizationDataMap.containsKey(ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY)) {
+//                String connectedAccountKey = monetizationDataMap.get
+//                        (ZarinpalMonetizationConstants.BILLING_ENGINE_CONNECTED_ACCOUNT_KEY).toString();
+//                if (StringUtils.isBlank(connectedAccountKey)) {
+//                    String errorMessage = "Connected account zarinpal key was not found for : " + apiName;
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage);
+//                }
+//                Stripe.apiKey = platformAccountKey;
+//                //create request options to link with the connected account
+//                RequestOptions requestOptions = RequestOptions.builder().setStripeAccount(connectedAccountKey).build();
+//                int applicationId = subscribedAPI.getApplication().getId();
+//                MonetizedSubscription monetizedSubscription = zarinpalMonetizationDAO.getBillingEngineSubscriptionId(apiId, applicationId);
+//                Plan plan = zarinpalMonetizationDAO.getMonetizationPlan(monetizedSubscription.getPlanId());
+//                Subscription billingEngineSubscription = Subscription.retrieve(monetizedSubscription, requestOptions);
+//                if (billingEngineSubscription == null) {
+//                    String errorMessage = "No billing engine subscription was found for : " + apiName;
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage);
+//                }
+//                //upcoming invoice is only applicable for metered usage (i.e - dynamic usage)
+//                if (!ZarinpalMonetizationConstants.METERED_USAGE.equalsIgnoreCase
+//                        (plan.getUsageType())) {
+//                    String errorMessage = "Usage type should be set to 'metered' to get the pending bill.";
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage);
+//                }
+//                Map<String, Object> invoiceParams = new HashMap<>();
+//                invoiceParams.put("subscription", billingEngineSubscription.getId());
+//                //fetch the upcoming invoice
+//                Invoice invoice = Invoice.upcoming(invoiceParams, requestOptions);
+//                if (invoice == null) {
+//                    String errorMessage = "No billing engine subscription was found for : " + apiName;
+//                    //throw MonetizationException as it will be logged and handled by the caller
+//                    throw new MonetizationException(errorMessage);
+//                }
+//                SimpleDateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss z");
+//                dateFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+//                //the below parameters are billing engine specific
+//                billingEngineUsageData.put("Description", invoice.getDescription());
+//                billingEngineUsageData.put("Paid", invoice.getPaid() != null ? invoice.getPaid().toString() : null);
+//                billingEngineUsageData.put("Tax", invoice.getTax() != null ?
+//                        invoice.getTax().toString() : null);
+//                billingEngineUsageData.put("Invoice ID", invoice.getId());
+//                billingEngineUsageData.put("Account Name", invoice.getAccountName());
+//                billingEngineUsageData.put("Next Payment Attempt", invoice.getNextPaymentAttempt() != null ?
+//                        dateFormatter.format(new Date(invoice.getNextPaymentAttempt() * 1000)) : null);
+//                billingEngineUsageData.put("Customer Email", invoice.getCustomerEmail());
+//                billingEngineUsageData.put("Currency", invoice.getCurrency());
+//                billingEngineUsageData.put("Account Country", invoice.getAccountCountry());
+//                billingEngineUsageData.put("Amount Remaining", invoice.getAmountRemaining() != null ?
+//                        Long.toString(invoice.getAmountRemaining() / 100L) : null);
+//                billingEngineUsageData.put("Period End", invoice.getPeriodEnd() != null ?
+//                        dateFormatter.format(new Date(invoice.getPeriodEnd() * 1000)) : null);
+//                billingEngineUsageData.put("Due Date", invoice.getDueDate() != null ?
+//                        dateFormatter.format(new Date(invoice.getDueDate())) : null);
+//                billingEngineUsageData.put("Amount Due", invoice.getAmountDue() != null ?
+//                        Long.toString(invoice.getAmountDue() / 100L) : null);
+//                billingEngineUsageData.put("Total Tax Amounts", invoice.getTotalTaxAmounts() != null ?
+//                        invoice.getTotalTaxAmounts().toString() : null);
+//                billingEngineUsageData.put("Amount Paid", invoice.getAmountPaid() != null ?
+//                        Long.toString(invoice.getAmountPaid() / 100L) : null);
+//                billingEngineUsageData.put("Subtotal", invoice.getSubtotal() != null ?
+//                        Long.toString(invoice.getSubtotal() / 100L) : null);
+//                billingEngineUsageData.put("Total", invoice.getTotal() != null ?
+//                        Long.toString(invoice.getTotal() / 100L) : null);
+//                billingEngineUsageData.put("Period Start", invoice.getPeriodStart() != null ?
+//                        dateFormatter.format(new Date(invoice.getPeriodStart() * 1000)) : null);
+//
+//                //the below parameters are also returned from stripe, but commented for simplicity of the invoice
+//                /*billingEngineUsageData.put("object", "invoice");
+//                billingEngineUsageData.put("Application Fee Amount", invoice.getApplicationFeeAmount() != null ?
+//                        invoice.getApplicationFeeAmount().toString() : null);
+//                billingEngineUsageData.put("Attempt Count", invoice.getAttemptCount() != null ?
+//                        invoice.getAttemptCount().toString() : null);
+//                billingEngineUsageData.put("Attempted", invoice.getAttempted() != null ?
+//                        invoice.getAttempted().toString() : null);
+//                billingEngineUsageData.put("Billing", invoice.getBilling());
+//                billingEngineUsageData.put("Billing Reason", invoice.getBillingReason());
+//                billingEngineUsageData.put("Charge", invoice.getCharge());
+//                billingEngineUsageData.put("Created", invoice.getCreated() != null ? invoice.getCreated().toString() : null);
+//                billingEngineUsageData.put("Customer", invoice.getCustomer());
+//                billingEngineUsageData.put("Customer Address", invoice.getCustomerAddress() != null ?
+//                        invoice.getCustomerAddress().toString() : null);
+//                billingEngineUsageData.put("Customer Name", invoice.getCustomerName());
+//                billingEngineUsageData.put("Ending Balance", invoice.getEndingBalance() != null ?
+//                        invoice.getEndingBalance().toString() : null);
+//                billingEngineUsageData.put("Livemode", invoice.getLivemode() != null ? invoice.getLivemode().toString() : null);
+//                billingEngineUsageData.put("Number", invoice.getNumber());
+//                billingEngineUsageData.put("Payment Intent", invoice.getPaymentIntent());
+//                billingEngineUsageData.put("Post Payment Credit Notes Amount",
+//                        invoice.getPostPaymentCreditNotesAmount() != null ? invoice.getPostPaymentCreditNotesAmount().toString() : null);
+//                billingEngineUsageData.put("Pre Payment Credit Notes Amount",
+//                        invoice.getPrePaymentCreditNotesAmount() != null ? invoice.getPrePaymentCreditNotesAmount().toString() : null);
+//                billingEngineUsageData.put("Receipt Number", invoice.getReceiptNumber());
+//                billingEngineUsageData.put("Subscription", invoice.getSubscription());
+//                billingEngineUsageData.put("Tax Percent", invoice.getTaxPercent() != null ?
+//                        invoice.getTaxPercent().toString() : null);*/
+//            }
+//        } catch (ProductMonetizationException e) {
+//            String errorMessage = "Error while fetching billing engine usage data for : " + apiName;
+//            //throw MonetizationException as it will be logged and handled by the caller
+//            throw new MonetizationException(errorMessage, e);
+//        } catch (APIManagementException e) {
+//            String errorMessage = "Failed to get subscription details of : " + apiName;
+//            //throw MonetizationException as it will be logged and handled by the caller
+//            throw new MonetizationException(errorMessage, e);
+//        } catch (ZarinpalMonetizationException e) {
+//            String errorMessage = "Failed to get billing engine data for subscription : " + subscriptionUUID;
+//            //throw MonetizationException as it will be logged and handled by the caller
+//            throw new MonetizationException(errorMessage, e);
+//        } catch (SQLException e) {
+//            String errorMessage = "Error while retrieving the API ID";
+//            throw new MonetizationException(errorMessage, e);
+//        }
 
-                //the below parameters are also returned from zarinpal, but commented for simplicity of the invoice
-                /*billingEngineUsageData.put("object", "invoice");
-                billingEngineUsageData.put("Application Fee Amount", invoice.getApplicationFeeAmount() != null ?
-                        invoice.getApplicationFeeAmount().toString() : null);
-                billingEngineUsageData.put("Attempt Count", invoice.getAttemptCount() != null ?
-                        invoice.getAttemptCount().toString() : null);
-                billingEngineUsageData.put("Attempted", invoice.getAttempted() != null ?
-                        invoice.getAttempted().toString() : null);
-                billingEngineUsageData.put("Billing", invoice.getBilling());
-                billingEngineUsageData.put("Billing Reason", invoice.getBillingReason());
-                billingEngineUsageData.put("Charge", invoice.getCharge());
-                billingEngineUsageData.put("Created", invoice.getCreated() != null ? invoice.getCreated().toString() : null);
-                billingEngineUsageData.put("Customer", invoice.getCustomer());
-                billingEngineUsageData.put("Customer Address", invoice.getCustomerAddress() != null ?
-                        invoice.getCustomerAddress().toString() : null);
-                billingEngineUsageData.put("Customer Name", invoice.getCustomerName());
-                billingEngineUsageData.put("Ending Balance", invoice.getEndingBalance() != null ?
-                        invoice.getEndingBalance().toString() : null);
-                billingEngineUsageData.put("Livemode", invoice.getLivemode() != null ? invoice.getLivemode().toString() : null);
-                billingEngineUsageData.put("Number", invoice.getNumber());
-                billingEngineUsageData.put("Payment Intent", invoice.getPaymentIntent());
-                billingEngineUsageData.put("Post Payment Credit Notes Amount",
-                        invoice.getPostPaymentCreditNotesAmount() != null ? invoice.getPostPaymentCreditNotesAmount().toString() : null);
-                billingEngineUsageData.put("Pre Payment Credit Notes Amount",
-                        invoice.getPrePaymentCreditNotesAmount() != null ? invoice.getPrePaymentCreditNotesAmount().toString() : null);
-                billingEngineUsageData.put("Receipt Number", invoice.getReceiptNumber());
-                billingEngineUsageData.put("Subscription", invoice.getSubscription());
-                billingEngineUsageData.put("Tax Percent", invoice.getTaxPercent() != null ?
-                        invoice.getTaxPercent().toString() : null);*/
-            }
-        } catch (ZarinpalException e) {
-            String errorMessage = "Error while fetching billing engine usage data for : " + apiName;
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        } catch (APIManagementException e) {
-            String errorMessage = "Failed to get subscription details of : " + apiName;
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to get billing engine data for subscription : " + subscriptionUUID;
-            //throw MonetizationException as it will be logged and handled by the caller
-            throw new MonetizationException(errorMessage, e);
-        }
-        return billingEngineUsageData;
+//        return billingEngineUsageData;
+
+        String errorMessage = "Not implemented!";
+        //throw MonetizationException as it will be logged and handled by the caller
+        throw new MonetizationException(errorMessage);
     }
 
     /**
@@ -994,13 +994,13 @@ public class ZarinpalMonetizationImpl implements Monetization {
                 //get the zarinpal key of platform account from  tenant conf json file
                 JSONObject tenantConfig = (JSONObject) new JSONParser().parse(tenantConfContent);
                 JSONObject monetizationInfo = (JSONObject) tenantConfig.get(ZarinpalMonetizationConstants.MONETIZATION_INFO);
-                String zarinpalPlatformAccountKey = monetizationInfo.get
+                String zarinpalMerchantID = monetizationInfo.get
                         (ZarinpalMonetizationConstants.BILLING_ENGINE_PLATFORM_ACCOUNT_KEY).toString();
-                if (StringUtils.isBlank(zarinpalPlatformAccountKey)) {
-                    String errorMessage = "Zarinpal platform account key is empty for tenant : " + tenantDomain;
+                if (StringUtils.isBlank(zarinpalMerchantID)) {
+                    String errorMessage = "Zarinpal MerchantID is empty for tenant : " + tenantDomain;
                     throw new ZarinpalMonetizationException(errorMessage);
                 }
-                return zarinpalPlatformAccountKey;
+                return zarinpalMerchantID;
             }
         } catch (ParseException e) {
             String errorMessage = "Error while parsing tenant configuration in tenant : " + tenantDomain;
@@ -1052,37 +1052,30 @@ public class ZarinpalMonetizationImpl implements Monetization {
      *
      * @param tier                tier
      * @param tenantId            tenant ID
-     * @param platformAccountKey  billing engine platform account key
-     * @param connectedAccountKey billing engine connected account key
      * @param billingProductId    billing engine product ID
      * @return created plan ID in billing engine
      * @throws ZarinpalMonetizationException if fails to create billing plan
      */
-    private String createBillingPlanForCommercialTier(Tier tier, int tenantId, String platformAccountKey,
-                                                      String connectedAccountKey, String billingProductId)
+    private String createBillingPlanForCommercialTier(Tier tier, int tenantId, String billingProductId)
             throws ZarinpalMonetizationException {
 
         try {
             String tierUUID = ApiMgtDAO.getInstance().getSubscriptionPolicy(tier.getName(), tenantId).getUUID();
             //get plan ID from mapping table
             String planId = zarinpalMonetizationDAO.getBillingPlanId(tierUUID);
-            Zarinpal.apiKey = platformAccountKey;
             //get that plan details
-            Plan billingPlan = Plan.retrieve(planId);
+            Plan billingPlan = zarinpalMonetizationDAO.getMonetizationPlan(planId);
             //get the values from that plan and replicate it
-            Map<String, Object> planParams = new HashMap<String, Object>();
-            planParams.put(ZarinpalMonetizationConstants.AMOUNT, billingPlan.getAmount());
-            planParams.put(ZarinpalMonetizationConstants.BILLING_SCHEME, billingPlan.getBillingScheme());
-            planParams.put(ZarinpalMonetizationConstants.INTERVAL, billingPlan.getInterval());
-            planParams.put(ZarinpalMonetizationConstants.PRODUCT_NICKNAME, billingPlan.getNickname());
-            planParams.put(ZarinpalMonetizationConstants.PRODUCT, billingProductId);
-            planParams.put(ZarinpalMonetizationConstants.CURRENCY, billingPlan.getCurrency());
-            planParams.put(ZarinpalMonetizationConstants.USAGE_TYPE, billingPlan.getUsageType());
-            RequestOptions planRequestOptions = RequestOptions.builder().setZarinpalAccount(connectedAccountKey).build();
-            //create a new zarinpal plan for the tier
-            Plan createdPlan = Plan.create(planParams, planRequestOptions);
+            Plan createdPlan = new Plan();
+            createdPlan.setAmount(billingPlan.getAmount());
+            createdPlan.setInterval(billingPlan.getInterval());
+            createdPlan.setProductNickname(billingPlan.getProductNickname());
+            createdPlan.setProductId(billingProductId);
+            createdPlan.setCurrency(billingPlan.getCurrency());
+            createdPlan.setUsageType(billingPlan.getUsageType());
+            zarinpalMonetizationDAO.addMonetizationPlan(createdPlan);
             return createdPlan.getId();
-        } catch (ZarinpalException e) {
+        } catch (ProductMonetizationException e) {
             String errorMessage = "Unable to create billing plan for : " + tier.getName();
             log.error(errorMessage);
             throw new ZarinpalMonetizationException(errorMessage, e);
@@ -1113,4 +1106,31 @@ public class ZarinpalMonetizationImpl implements Monetization {
         }
         return time;
     }
+
+//    public List<API> getAllAPIs(String tenantDomain, String username) throws APIManagementException {
+//        Properties persistenceProperties = new Properties();
+//        APIPersistence apiPersistenceInstance = PersistenceManager.getPersistenceInstance(persistenceProperties);
+//        List<API> apiSortedList = new ArrayList<API>();
+//        Organization org = new Organization(tenantDomain);
+//        String[] roles = APIUtil.getFilteredUserRoles(username);
+//        Map<String, Object> properties = APIUtil.getUserProperties(username);
+//        UserContext userCtx = new UserContext(username, org, properties, roles);
+//        try {
+//            PublisherAPISearchResult searchAPIs = apiPersistenceInstance.searchAPIsForPublisher(org, "", 0,
+//                    Integer.MAX_VALUE, userCtx);
+//
+//            if (searchAPIs != null) {
+//                List<PublisherAPIInfo> list = searchAPIs.getPublisherAPIInfoList();
+//                for (PublisherAPIInfo publisherAPIInfo : list) {
+//                    API mappedAPI = APIMapper.INSTANCE.toApi(publisherAPIInfo);
+//                    apiSortedList.add(mappedAPI);
+//                }
+//            }
+//        } catch (APIPersistenceException e) {
+//            throw new APIManagementException("Error while searching the api ", e);
+//        }
+//
+//        Collections.sort(apiSortedList, new APINameComparator());
+//        return apiSortedList;
+//    }
 }

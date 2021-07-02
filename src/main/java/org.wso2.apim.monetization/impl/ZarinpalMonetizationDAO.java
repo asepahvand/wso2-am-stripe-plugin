@@ -59,6 +59,192 @@ public class ZarinpalMonetizationDAO {
     }
 
     /**
+     * Add monetization product to the database
+     *
+     * @param product    the product
+     * @throws ProductMonetizationException if failed to add monetization product data to the database
+     */
+    public void addMonetizationProduct(Product product)
+            throws ProductMonetizationException {
+        Connection conn = null;
+        PreparedStatement policyStatement = null;
+        try {
+            conn = APIMgtDBUtil.getConnection();
+            conn.setAutoCommit(false);
+            policyStatement = conn.prepareStatement(ZarinpalMonetizationConstants.INSERT_MONETIZATION_PRODUCT_SQL);
+            policyStatement.setString(1, product.getId());
+            policyStatement.setString(2, product.getName());
+            policyStatement.setString(3, product.getType());
+            policyStatement.executeUpdate();
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ex) {
+                    String errorMessage = "Failed to rollback adding monetization product for : " + product.getName();
+                    log.error(errorMessage);
+                    throw new ProductMonetizationException(errorMessage, ex);
+                }
+            }
+            String errorMessage = "Failed to add monetization product for : " + product.getName();
+            log.error(errorMessage);
+            throw new ProductMonetizationException(errorMessage, e);
+        } finally {
+            APIMgtDBUtil.closeAllConnections(policyStatement, conn, null);
+        }
+    }
+
+    /**
+     * Delete monetization product from the database
+     *
+     * @param productId    the product id
+     * @throws ProductMonetizationException if failed to delete monetization product from the database
+     */
+    public void deleteMonetizationProduct(String productId)
+            throws ProductMonetizationException {
+        Connection conn = null;
+        PreparedStatement policyStatement = null;
+        try {
+            conn = APIMgtDBUtil.getConnection();
+            conn.setAutoCommit(false);
+            policyStatement = conn.prepareStatement(ZarinpalMonetizationConstants.DELETE_MONETIZATION_PRODUCT_SQL);
+            policyStatement.setString(1, productId);
+            policyStatement.executeUpdate();
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ex) {
+                    String errorMessage = "Failed to delete monetization product : " + productId;
+                    log.error(errorMessage);
+                    throw new ProductMonetizationException(errorMessage, ex);
+                }
+            }
+            String errorMessage = "Failed to delete monetization product : " + productId;
+            log.error(errorMessage);
+            throw new ProductMonetizationException(errorMessage, e);
+        } finally {
+            APIMgtDBUtil.closeAllConnections(policyStatement, conn, null);
+        }
+    }
+
+    /**
+     * Get monetization plan from the database
+     *
+     * @param planId    the plan id
+     * @throws ProductMonetizationException if failed to get monetization plan from the database
+     */
+    public Plan getMonetizationPlan(String planId)
+            throws ProductMonetizationException {
+        Connection conn = null;
+        ResultSet rs = null;
+        PreparedStatement policyStatement = null;
+        Plan plan = new Plan();
+        plan.setId(null);
+        try {
+            conn = APIMgtDBUtil.getConnection();
+            conn.setAutoCommit(false);
+            policyStatement = conn.prepareStatement(ZarinpalMonetizationConstants.GET_MONETIZATION_PLAN_SQL);
+            policyStatement.setString(1, planId);
+            rs = policyStatement.executeQuery();
+            while (rs.next()) {
+                plan.setId(rs.getString("ID"));
+                plan.setCurrency(rs.getString("CURRENCY"));
+                plan.setProductId(rs.getString("PRODUCT_ID"));
+                plan.setProductNickname(rs.getString("PRODUCT_NICKNAME"));
+                plan.setInterval(rs.getString("INTERVAL"));
+                plan.setAmount(rs.getInt("AMOUNT"));
+                plan.setUsageType(rs.getString("USAGE_TYPE"));
+            }
+        } catch (SQLException e) {
+            String errorMessage = "Failed to get monetization plan : " + planId;
+            log.error(errorMessage);
+            throw new ProductMonetizationException(errorMessage, e);
+        } finally {
+            APIMgtDBUtil.closeAllConnections(policyStatement, conn, rs);
+        }
+        return plan;
+    }
+
+    /**
+     * Add monetization plan data to the database
+     *
+     * @param plan    the plan
+     * @throws ProductMonetizationException if failed to add monetization plan to the database
+     */
+    public void addMonetizationPlan(Plan plan)
+            throws ProductMonetizationException {
+        Connection conn = null;
+        PreparedStatement policyStatement = null;
+        try {
+            conn = APIMgtDBUtil.getConnection();
+            conn.setAutoCommit(false);
+            policyStatement = conn.prepareStatement(ZarinpalMonetizationConstants.INSERT_MONETIZATION_PLAN_SQL);
+            policyStatement.setString(1, plan.getId());
+            policyStatement.setString(2, plan.getCurrency());
+            policyStatement.setString(3, plan.getProductId());
+            policyStatement.setString(4, plan.getProductNickname());
+            policyStatement.setString(5, plan.getInterval());
+            policyStatement.setInt(6, plan.getAmount());
+            policyStatement.setString(7, plan.getUsageType());
+            policyStatement.executeUpdate();
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ex) {
+                    String errorMessage = "Failed to rollback adding monetization plan for : " + plan.getProductNickname();
+                    log.error(errorMessage);
+                    throw new ProductMonetizationException(errorMessage, ex);
+                }
+            }
+            String errorMessage = "Failed to add monetization plan for : " + plan.getProductNickname();
+            log.error(errorMessage);
+            throw new ProductMonetizationException(errorMessage, e);
+        } finally {
+            APIMgtDBUtil.closeAllConnections(policyStatement, conn, null);
+        }
+    }
+
+    /**
+     * Delete monetization plan to the database
+     *
+     * @param planId    the plan id
+     * @throws ProductMonetizationException if failed to delete monetization plan from the database
+     */
+    public void deleteMonetizationPlan(String planId)
+            throws ProductMonetizationException {
+        Connection conn = null;
+        PreparedStatement policyStatement = null;
+        try {
+            conn = APIMgtDBUtil.getConnection();
+            conn.setAutoCommit(false);
+            policyStatement = conn.prepareStatement(ZarinpalMonetizationConstants.DELETE_MONETIZATION_PLAN_SQL);
+            policyStatement.setString(1, planId);
+            policyStatement.executeUpdate();
+            conn.commit();
+        } catch (SQLException e) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ex) {
+                    String errorMessage = "Failed to delete monetization plan : " + planId;
+                    log.error(errorMessage);
+                    throw new ProductMonetizationException(errorMessage, ex);
+                }
+            }
+            String errorMessage = "Failed to delete monetization product : " + planId;
+            log.error(errorMessage);
+            throw new ProductMonetizationException(errorMessage, e);
+        } finally {
+            APIMgtDBUtil.closeAllConnections(policyStatement, conn, null);
+        }
+    }
+
+    /**
      * Add monetization plan data to the database
      *
      * @param policy    subscription policy
