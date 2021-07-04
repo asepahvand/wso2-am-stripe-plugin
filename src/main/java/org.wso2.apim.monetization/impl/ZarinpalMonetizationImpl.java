@@ -90,11 +90,10 @@ public class ZarinpalMonetizationImpl implements Monetization {
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage);
             }
-            String productId = product.getId();
             Plan plan = new Plan();
             plan.setCurrency(subscriptionPolicy.getMonetizationPlanProperties().
                     get(APIConstants.Monetization.CURRENCY).toLowerCase());
-            plan.setProductId(productId);
+            plan.setProductId(product.getId());
             plan.setProductNickname(subscriptionPolicy.getPolicyName());
             plan.setInterval(subscriptionPolicy.getMonetizationPlanProperties().get(APIConstants.Monetization.BILLING_CYCLE));
             if (APIConstants.Monetization.FIXED_RATE.equalsIgnoreCase(subscriptionPolicy.getMonetizationPlan())) {
@@ -109,7 +108,6 @@ public class ZarinpalMonetizationImpl implements Monetization {
                 plan.setAmount((int) amount);
                 plan.setUsageType(ZarinpalMonetizationConstants.METERED_USAGE);
             }
-            String createdPlanId = plan.getId();
             try {
                 zarinpalMonetizationDAO.addMonetizationPlan(plan);
             } catch (ProductMonetizationException e) {
@@ -119,7 +117,7 @@ public class ZarinpalMonetizationImpl implements Monetization {
                 throw new MonetizationException(errorMessage);
             }
             //add database record
-            zarinpalMonetizationDAO.addMonetizationPlanData(subscriptionPolicy, productId, createdPlanId);
+            zarinpalMonetizationDAO.addMonetizationPlanData(subscriptionPolicy, product.getId(), plan.getId());
             return true;
         } catch (ZarinpalMonetizationException e) {
             String errorMessage = "Failed to create monetization plan for : " + subscriptionPolicy.getPolicyName() +
@@ -1050,9 +1048,9 @@ public class ZarinpalMonetizationImpl implements Monetization {
     /**
      * Create billing plan for a given commercial tier
      *
-     * @param tier                tier
-     * @param tenantId            tenant ID
-     * @param billingProductId    billing engine product ID
+     * @param tier             tier
+     * @param tenantId         tenant ID
+     * @param billingProductId billing engine product ID
      * @return created plan ID in billing engine
      * @throws ZarinpalMonetizationException if fails to create billing plan
      */
