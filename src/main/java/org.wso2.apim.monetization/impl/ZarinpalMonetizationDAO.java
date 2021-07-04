@@ -196,13 +196,13 @@ public class ZarinpalMonetizationDAO {
                 try {
                     conn.rollback();
                 } catch (SQLException ex) {
-                    String errorMessage = "Failed to rollback adding monetization plan for (This is a test message!) : " + plan.getProductNickname();
+                    String errorMessage = "Failed to rollback adding monetization plan for : " + plan.getProductNickname();
                     log.error(errorMessage);
                     log.error(ex.getMessage());
                     throw new ProductMonetizationException(errorMessage, ex);
                 }
             }
-            String errorMessage = "Failed to add monetization plan for (This is a test message!) : " + plan.getProductNickname();
+            String errorMessage = "Failed to add monetization plan for: " + plan.getProductNickname();
             log.error(errorMessage);
             throw new ProductMonetizationException(errorMessage, e);
         } finally {

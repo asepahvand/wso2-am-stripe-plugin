@@ -111,7 +111,7 @@ public class ZarinpalMonetizationImpl implements Monetization {
             try {
                 zarinpalMonetizationDAO.addMonetizationPlan(plan);
             } catch (ProductMonetizationException e) {
-                String errorMessage = "Failed to create plan for tier (This is a test message!) : " + subscriptionPolicy.getPolicyName() +
+                String errorMessage = "Failed to create plan for tier : " + subscriptionPolicy.getPolicyName() +
                         " in " + subscriptionPolicy.getTenantDomain();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage);
@@ -120,7 +120,7 @@ public class ZarinpalMonetizationImpl implements Monetization {
             zarinpalMonetizationDAO.addMonetizationPlanData(subscriptionPolicy, product.getId(), plan.getId());
             return true;
         } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to create monetization plan for (This is a test message!) : " + subscriptionPolicy.getPolicyName() +
+            String errorMessage = "Failed to create monetization plan for : " + subscriptionPolicy.getPolicyName() +
                     " in the database.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
@@ -1048,9 +1048,9 @@ public class ZarinpalMonetizationImpl implements Monetization {
     /**
      * Create billing plan for a given commercial tier
      *
-     * @param tier             tier
-     * @param tenantId         tenant ID
-     * @param billingProductId billing engine product ID
+     * @param tier                tier
+     * @param tenantId            tenant ID
+     * @param billingProductId    billing engine product ID
      * @return created plan ID in billing engine
      * @throws ZarinpalMonetizationException if fails to create billing plan
      */
