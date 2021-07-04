@@ -111,7 +111,7 @@ public class ZarinpalMonetizationImpl implements Monetization {
             try {
                 zarinpalMonetizationDAO.addMonetizationPlan(plan);
             } catch (ProductMonetizationException e) {
-                String errorMessage = "Failed to create plan for tier : " + subscriptionPolicy.getPolicyName() +
+                String errorMessage = "Failed to create plan for tier (This is a test message!) : " + subscriptionPolicy.getPolicyName() +
                         " in " + subscriptionPolicy.getTenantDomain();
                 //throw MonetizationException as it will be logged and handled by the caller
                 throw new MonetizationException(errorMessage);
@@ -120,7 +120,7 @@ public class ZarinpalMonetizationImpl implements Monetization {
             zarinpalMonetizationDAO.addMonetizationPlanData(subscriptionPolicy, product.getId(), plan.getId());
             return true;
         } catch (ZarinpalMonetizationException e) {
-            String errorMessage = "Failed to create monetization plan for : " + subscriptionPolicy.getPolicyName() +
+            String errorMessage = "Failed to create monetization plan for (This is a test message!) : " + subscriptionPolicy.getPolicyName() +
                     " in the database.";
             //throw MonetizationException as it will be logged and handled by the caller
             throw new MonetizationException(errorMessage, e);
