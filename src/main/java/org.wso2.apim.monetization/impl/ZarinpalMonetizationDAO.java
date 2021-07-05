@@ -437,7 +437,7 @@ public class ZarinpalMonetizationDAO {
             statement.setInt(1, apiId);
             ResultSet rs = statement.executeQuery();
             while (rs.next()) {
-                billingEngineProductId = rs.getString("STRIPE_PRODUCT_ID");
+                billingEngineProductId = rs.getString("PRODUCT_ID");
             }
             connection.commit();
         } catch (SQLException e) {
@@ -471,7 +471,7 @@ public class ZarinpalMonetizationDAO {
             statement.setString(2, tierName);
             ResultSet rs = statement.executeQuery();
             while (rs.next()) {
-                billingEnginePlanId = rs.getString("STRIPE_PLAN_ID");
+                billingEnginePlanId = rs.getString("PLAN_ID");
             }
             connection.commit();
         } catch (SQLException e) {
@@ -618,7 +618,7 @@ public class ZarinpalMonetizationDAO {
             ResultSet rs = statement.executeQuery();
             while (rs.next()) {
                 String tierName = rs.getString("TIER_NAME");
-                String zarinpalPlanId = rs.getString("STRIPE_PLAN_ID");
+                String zarinpalPlanId = rs.getString("PLAN_ID");
                 zarinpalPlanTierMap.put(tierName, zarinpalPlanId);
             }
             connection.commit();
